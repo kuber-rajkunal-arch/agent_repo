@@ -1,0 +1,426 @@
+config {
+  type: "table",
+  name: "Equipment",
+  schema: "Equipment",
+  description: "Equipment product having information of assets in A2R value stream from MAXIMO .Asset related information is present in detail level.",
+  tags: ["A2R", "MAXIMO", "ASSET"],
+  assertions: {
+    uniqueKey: ["EQUIPMENT_NUM"]
+  }
+}
+
+WITH
+  LatestDocsPerAsset AS (
+    SELECT
+      ASSETNUM,
+      ID,
+      'ASSET' AS SRC
+    FROM
+      (
+        SELECT
+          a.OWNERID AS ASSETNUM,
+          a.DOCLINKSID AS ID,
+          'ASSET' AS SRC,
+          ROW_NUMBER() OVER (
+            PARTITION BY
+              a.OWNERID
+            ORDER BY
+              a.ROWSTAMP DESC
+          ) AS rnk
+        FROM
+          ${ref("us102762-np-pm-da-25938", "QA_MAXIMO", "DOCLINKS")} AS a
+        WHERE
+          a.OWNERTABLE = 'ASSET' AND a.DOCTYPE = 'Material Cert'
+      )
+    WHERE
+      rnk = 1
+    UNION ALL
+    SELECT
+      ASSETNUM,
+      ID,
+      'WORKORDER' AS SRC
+    FROM
+      (
+        SELECT
+          b.ASSETNUM,
+          a.DOCLINKSID AS ID,
+          'WORKORDER' AS SRC,
+          ROW_NUMBER() OVER (
+            PARTITION BY
+              b.ASSETNUM
+            ORDER BY
+              a.ROWSTAMP DESC
+          ) AS rnk
+        FROM
+          ${ref("us102762-np-pm-da-25938", "QA_MAXIMO", "DOCLINKS")} AS a
+          INNER JOIN ${ref("us102762-np-pm-da-25938", "A2R_STG", "WORKORDER")} AS b ON a.OWNERID = b.WORKORDERID
+        WHERE
+          a.OWNERTABLE = 'WORKORDER' AND a.DOCTYPE = 'Material Cert'
+      )
+    WHERE
+      rnk = 1
+  ),
+  A AS (
+    SELECT
+      ASSETNUM AS EQUIPMENT_NUM,
+      SERIALNUM AS SERIAL_NUM,
+      ASSETID AS EQUIPMENT_ID,
+      SLB_ASSET_SN_ID AS EQUIPMENT_SN_ID,
+      ASSETTYPE,
+      ASSETUID,
+      SLB_MFGDATE AS MFGDATE,
+      ANCESTOR,
+      SLB_COMPANYCODE AS CompanyCode,
+      INSTALLDATE AS COMMISSION_DATE,
+      SLB_ASSETPARTNUM AS PART_NUMBER,
+      SLB_ASSETGROUP AS ASSET_GROUP,
+      EQ1 AS PM_STATUS,
+      EQ7,
+      EQ8 AS MAINTENANCE_STATUS,
+      EQ10 AS REASON_OF_PM_STATUS,
+      SLB_GBV AS GBV,
+      SLB_NBV AS NBV,
+      STATUS,
+      MANUFACTURER,
+      LOCATION AS EQUIPMENT_LOCATION,
+      SLB_OWNER_LOCATION AS EQUIPMENT_OWNER_LOCATION,
+      SLB_LOCATEDSITE AS LOCATED_SITE,
+      SLB_ASSETMOVEMENTSTATUS AS EQUIPMENT_MOVEMENT_STATUS,
+      PARENT,
+      SLB_UNIT_FA AS UNIT_FA,
+      SLB_SPL_HASSAMPLE AS HAS_SAMPLE,
+      SLB_PMDUE AS PM_DUE,
+      SLB_FCODUE AS FCO_DUE,
+      SLB_MOD_STATUS AS MODIFICATION_STATUS,
+      SLB_TECHST_COL AS TECH_ST_COL,
+      SLB_CURR_PHYLOC AS PHYSICAL_LOCATION,
+      SLB_INSERVICEDATE AS INSERVICE_DATE,
+      SLB_TECHSTATUS AS TECHNICAL_STATUS,
+      DESCRIPTION AS EQUIPMENT_DESCRIPTION,
+      STATUSDATE AS EQUIPMENT_STATUS_DATE,
+      CHANGEDATE AS EQUIPMENT_CHANGE_DATE,
+      SLB_LOGISTICSTATUS AS LOGISTIC_STATUS,
+      PLUSTMODEL AS PLUST_MODEL,
+      PLUSTYEAR AS PLUST_YEAR,
+      SLB_EDFSTATUS AS EDF_STATUS,
+      SLB_OANUM AS OANUMBER,
+      SLB_PRODUCTIONNUMBER AS PRODUCTION_NUMBER,
+      TOTALCOST AS TOTAL_COST,
+      TOTDOWNTIME AS TOT_DOWN_TIME,
+      YTDCOST AS YTD_COST,
+      EQ23 AS BUILD_DATE,
+      SLB_MODSTATUS_COLOR AS MODSTATUS_COLOR,
+      SLB_LEGACYASSETNUM AS LEGACY_ASSETNUM,
+      SLB_NEWASSETNUM AS NEW_ASSETNUM,
+      ROWSTAMP
+    FROM
+      ${ref("us102762-np-pm-da-25938", "A2R_STG", "ASSET")}
+  ),
+  K AS (
+    SELECT
+      ASSETNUM,
+      MAX(ROWSTAMP) AS ROWSTAMP
+    FROM
+      ${ref("us102762-np-pm-da-25938", "A2R_STG", "ASSET")}
+    GROUP BY
+      ASSETNUM
+  ),
+  AA AS (
+    SELECT
+      ANCESTOR,
+      SITEID,
+      ASSETNUM,
+      HIERARCHYLEVELS
+    FROM
+      (
+        SELECT
+          *,
+          ROW_NUMBER() OVER (
+            PARTITION BY
+              ASSETNUM
+            ORDER BY
+              HIERARCHYLEVELS DESC
+          ) AS rnk
+        FROM
+          ${ref("us102762-np-pm-da-25938", "QA_MAXIMO", "ASSETANCESTOR")}
+      )
+    WHERE
+      rnk = 1
+  ),
+  B AS (
+    SELECT
+      ASSETUID,
+      SLB_CURRLOCATIONTYPE AS CURRENT_LOCATION_TYPE,
+      SLB_DFP AS DFP,
+      SLB_ASSETUID,
+      SLB_HRSSINCELASTSL AS HRS_SINCE_LAST_SL,
+      SLB_HRSPUMP AS HOURS_PUMP,
+      SLB_EDT AS HOURS_EDT,
+      SLB_CREATEBY AS CREATEDBY,
+      SLB_STAMPEDSN AS STAMPED_SN,
+      SLB_DOWNFORREPAIR AS DOWN_FOR_REPAIR,
+      SLB_RIGNAME AS RIG_NAME,
+      SLB_STAMPEDFC AS STAMPED_FC,
+      SLB_TEMPMAX AS MAX_TEMP,
+      SLB_SHOCKMAXLEVEL AS MAX_SHOCK_LEVEL,
+      SLB_SHOCKMAXDUR AS MAX_DUR_SHOCK,
+      SLB_SHOPUSEONLY AS SHOP_USE_ONLY,
+      SLB_ASSIGNEDCLIENT AS ASSIGNED_CLIENT,
+      SLB_DAM_BEYOND_REP AS DAMAGED_BEYOND_REPAIR,
+      SLB_TSDFP AS TOOLSET_DFP,
+      SLB_LEGALENTITY AS LegalEntity
+    FROM
+      ${ref("us102762-np-pm-da-25938", "QA_MAXIMO", "SLB_ASSETEXT")}
+  ),
+  C AS (
+    SELECT
+      ASSETTYPE,
+      TYPECATEGORY,
+      SLB_SUBFAMILY AS SUB_FAMILY,
+      Activity
+    FROM
+      ${ref("us102762-np-pm-da-25938", "QA_MAXIMO", "SLBTYPE")}
+  ),
+  D AS (
+    SELECT
+      SLB_OPERATIONNUMBER,
+      SLB_COMPANY_NAME AS COMPANY_NAME,
+      SLB_RIG_NAME AS RIG_NAME,
+      SLB_FIELDNAME AS FIELDNAME,
+      SLB_OPERATION_STATUS AS OPERATION_STATUS,
+      SLB_RIG_TYPE AS RIG_TYPE,
+      SLB_WELL_NAME AS WELL_NAME,
+      ROWSTAMP
+    FROM
+      (
+        SELECT
+          *,
+          RANK() OVER (
+            PARTITION BY
+              SLB_OPERATIONNUMBER
+            ORDER BY
+              ROWSTAMP DESC
+          ) AS RNK
+        FROM
+          ${ref("us102762-np-pm-da-25938", "QA_MAXIMO", "SLB_OPERATIONS")}
+      )
+    WHERE
+      RNK = 1
+  ),
+  DOC AS (
+    SELECT
+      ADOC.DOCLINKSID,
+      ADOC.OWNERID,
+      ADOC.SLB_DMATTACH_MAT AS MATERIAL,
+      ADOC.SLB_DMATTACH_MTYPE AS MATERIAL_TYPE,
+      ADOC.SLB_DMATTACH_VENDOR AS VENDOR,
+      ADOC.SLB_DMATTACH_YLD AS YIELDSTRENGTH,
+      ADOC.CHANGEDATE AS MATERIALCERTDATE,
+      ADOC.DOCUMENT,
+      ADOC.DOCVERSION AS DOC_VERSION,
+      ADOC.GETLATESTVERSION AS GETLATEST_VERSION,
+      ADOC.OWNERTABLE AS OWNER_TABLE,
+      ADOC.REFERENCE,
+      ADOC.DOCTYPE,
+      LDPA.ASSETNUM
+    FROM
+      ${ref("us102762-np-pm-da-25938", "QA_MAXIMO", "DOCLINKS")} AS ADOC
+      INNER JOIN LatestDocsPerAsset AS LDPA ON ADOC.DOCLINKSID = LDPA.ID
+    WHERE ADOC.DOCTYPE = 'Material Cert'
+  ),
+  PP AS (
+    SELECT
+      a.OWNERID,
+      a.DOCLINKSID,
+      b.ASSETNUM,
+      b.WONUM
+    FROM
+      ${ref("us102762-np-pm-da-25938", "QA_MAXIMO", "DOCLINKS")} a
+      INNER JOIN ${ref("us102762-np-pm-da-25938", "A2R_STG", "WORKORDER")} b ON a.ownerid = b.workorderid
+    WHERE
+      a.OWNERTABLE = 'WORKORDER' AND a.DOCTYPE = 'Material Cert'
+  ),
+  SJR AS (
+    SELECT
+      ASSETNUM,
+      SLB_JUNK_REASON
+    FROM (
+      SELECT
+        A.ASSETNUM,
+        C.SLB_JUNK_REASON,
+        RANK() OVER (
+          PARTITION BY
+            UPPER(TRIM(A.ASSETNUM))
+          ORDER BY
+            C.STATUSDATE DESC,
+            C.TICKETID DESC
+        ) AS rank_value
+      FROM
+        ${ref("us102762-np-pm-da-25938", "A2R_STG", "ASSET")} AS A
+        INNER JOIN ${ref("us102762-np-pm-da-25938", "QA_MAXIMO", "SLB_MULTIASSET")} AS B ON A.ASSETNUM = B.ASSETNUM
+        INNER JOIN ${ref("us102762-np-pm-da-25938", "QA_MAXIMO", "TICKET")} AS C ON B.TICKETID = C.TICKETID
+      WHERE
+        A.STATUS IN ('PREJUNK', 'DECOMMISSIONED')
+        AND C.SLB_JUNK_REASON IS NOT NULL
+    )
+    WHERE rank_value = 1
+  )
+SELECT
+  a.EQUIPMENT_NUM,
+  a.SERIAL_NUM,
+  a.EQUIPMENT_ID,
+  AA.ANCESTOR AS TOPLEVELEQUIPMENT,
+  AA.SITEID,
+  a.EQUIPMENT_SN_ID,
+  c.Activity,
+  c.SUB_FAMILY,
+  c.TYPECATEGORY,
+  a.GBV,
+  a.NBV,
+  a.STATUS,
+  a.UNIT_FA,
+  a.PM_STATUS,
+  a.EQ7,
+  a.MAINTENANCE_STATUS,
+  a.REASON_OF_PM_STATUS,
+  a.MFGDATE,
+  a.COMMISSION_DATE,
+  a.MANUFACTURER,
+  a.PART_NUMBER,
+  a.EQUIPMENT_LOCATION,
+  a.EQUIPMENT_OWNER_LOCATION,
+  a.ASSETTYPE AS EQUIPMENT_TYPE,
+  a.ASSETUID AS EQUIPMENT_UID,
+  a.LOCATED_SITE,
+  a.ASSET_GROUP,
+  a.EQUIPMENT_MOVEMENT_STATUS,
+  a.MODIFICATION_STATUS,
+  a.PM_DUE,
+  a.FCO_DUE,
+  a.TECH_ST_COL,
+  a.TECHNICAL_STATUS,
+  a.EQUIPMENT_DESCRIPTION,
+  a.EQUIPMENT_STATUS_DATE,
+  a.EQUIPMENT_CHANGE_DATE,
+  a.PHYSICAL_LOCATION,
+  a.INSERVICE_DATE,
+  a.PARENT,
+  a.HAS_SAMPLE,
+  a.LOGISTIC_STATUS,
+  a.PLUST_MODEL,
+  a.PLUST_YEAR,
+  a.EDF_STATUS,
+  a.OANUMBER,
+  a.PRODUCTION_NUMBER,
+  a.TOTAL_COST,
+  a.TOT_DOWN_TIME,
+  a.YTD_COST,
+  a.LEGACY_ASSETNUM,
+  a.NEW_ASSETNUM,
+  a.BUILD_DATE,
+  a.MODSTATUS_COLOR,
+  a.CompanyCode,
+  b.LegalEntity,
+  b.CURRENT_LOCATION_TYPE,
+  b.DFP,
+  b.HRS_SINCE_LAST_SL,
+  b.HOURS_PUMP,
+  b.HOURS_EDT,
+  b.CREATEDBY,
+  b.STAMPED_SN,
+  b.DOWN_FOR_REPAIR,
+  d.RIG_NAME,
+  b.STAMPED_FC,
+  b.MAX_TEMP,
+  b.MAX_SHOCK_LEVEL,
+  b.MAX_DUR_SHOCK,
+  b.SHOP_USE_ONLY,
+  b.ASSIGNED_CLIENT,
+  b.DAMAGED_BEYOND_REPAIR,
+  b.TOOLSET_DFP,
+  D.COMPANY_NAME,
+  DOC.DOCLINKSID,
+  DOC.MATERIAL,
+  DOC.MATERIAL_TYPE,
+  DOC.VENDOR,
+  DOC.YIELDSTRENGTH,
+  DOC.MATERIALCERTDATE,
+  DOC.DOCUMENT,
+  DOC.DOC_VERSION,
+  DOC.GETLATEST_VERSION,
+  DOC.OWNERID AS OWNER_ID,
+  DOC.OWNER_TABLE,
+  DOC.REFERENCE,
+  SJR.SLB_JUNK_REASON,
+  D.FIELDNAME,
+  D.OPERATION_STATUS,
+  D.RIG_TYPE,
+  D.WELL_NAME,
+  'EAR-AA-2392' AS SOURCE,
+  CURRENT_TIMESTAMP() AS UPDATED_DATETIME,
+  CURRENT_TIMESTAMP() AS PROCESSING_DATE,
+  'a2r-data-product-dataform : Equipment.sqlx' AS UPDATED_BY,
+  CURRENT_TIMESTAMP() AS CREATED_DATETIME,
+  'a2r-data-product-dataform : Equipment.sqlx' AS CREATED_BY
+FROM
+  A
+  INNER JOIN K ON A.EQUIPMENT_NUM = K.ASSETNUM AND A.ROWSTAMP = K.ROWSTAMP
+  LEFT JOIN AA ON A.EQUIPMENT_NUM = AA.ASSETNUM
+  LEFT JOIN B ON a.ASSETUID = B.ASSETUID
+  LEFT JOIN C ON A.ASSETTYPE = C.ASSETTYPE
+  LEFT JOIN D ON LTRIM(RTRIM(A.PHYSICAL_LOCATION)) = LTRIM(RTRIM(D.SLB_OPERATIONNUMBER))
+  LEFT JOIN DOC ON LTRIM(RTRIM(A.EQUIPMENT_NUM)) = LTRIM(RTRIM(DOC.ASSETNUM))
+  LEFT JOIN PP ON LTRIM(RTRIM(A.ASSETUID)) = LTRIM(RTRIM(PP.OWNERID))
+  LEFT JOIN SJR ON SJR.ASSETNUM = A.EQUIPMENT_NUM
+
+-- UNIT TESTS
+-- Test: EQUIPMENT_NUM must be unique
+SELECT COUNT(*) AS failures
+FROM (
+  SELECT EQUIPMENT_NUM, COUNT(*) AS num
+  FROM ${self()}
+  GROUP BY EQUIPMENT_NUM
+  HAVING num > 1
+);
+
+-- Test: EQUIPMENT_NUM must not be NULL
+SELECT COUNT(*) AS failures
+FROM ${self()}
+WHERE EQUIPMENT_NUM IS NULL;
+
+-- Test: EQUIPMENT_ID must not be NULL
+SELECT COUNT(*) AS failures
+FROM ${self()}
+WHERE EQUIPMENT_ID IS NULL;
+
+-- Test: STATUS must be one of the known values or not NULL
+-- This test just checks for NULLs, can be expanded with known statuses
+SELECT COUNT(*) AS failures
+FROM ${self()}
+WHERE STATUS IS NULL;
+
+-- Test: Foreign key check on DOC to ASSET
+SELECT COUNT(*) AS failures
+FROM ${self()} AS t
+LEFT JOIN ${ref("us102762-np-pm-da-25938", "QA_MAXIMO", "DOCLINKS")} AS d ON t.DOCLINKSID = d.DOCLINKSID
+WHERE t.DOCLINKSID IS NOT NULL AND d.DOCLINKSID IS NULL;
+
+-- Test: Negative values for cost fields
+SELECT COUNT(*) AS failures
+FROM ${self()}
+WHERE TOTAL_COST < 0 OR YTD_COST < 0;
+
+-- Test: Ensure key date fields are not in the future
+SELECT COUNT(*) AS failures
+FROM ${self()}
+WHERE MFGDATE > CURRENT_DATE() OR COMMISSION_DATE > CURRENT_DATE();
+
+-- PROCESSING SUMMARY
+-- CTEs used: LatestDocsPerAsset, A, K, AA, B, C, D, DOC, PP, SJR
+-- JOINs used: INNER JOIN on A and K to get latest asset records. LEFT JOINs for enrichment from AA, B, C, D, DOC, PP, SJR.
+-- Filters applied: Various rank and row_number filters in CTEs to select latest records. Status filters in SJR. Doctype filters in DOC and PP.
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: Uniqueness, Not Null, Referential Integrity, Domain, Sanity Checks
+-- Column descriptions source: from rules
+-- Output Mode used: sqlx
