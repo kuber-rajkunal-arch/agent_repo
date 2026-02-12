@@ -1,0 +1,93 @@
+config {
+  type: 'table',
+  name: 'RiteWorkorderPart',
+  schema: 'RITE_SRC',
+  description: 'A model that consolidates work order parts information, joining work orders with asset and part details.',
+  assertions: {
+    uniqueKey: ['PrimaryKey']
+  }
+}
+
+SELECT
+  concat(coalesce(SRCWO.WO_ID, 0), '&', coalesce(SRCWOA.ASSET_SN_ID, 0), '&', coalesce(SRCWOAPARTS.PART_ID, 0)) AS PrimaryKey,
+  SRCWO.WO_ID AS WorkorderNum_WO_ID,
+  SRCWOA.ASSET_SN_ID AS EquipmentSNId_ASSET_SN_ID,
+  SRCWOAPARTS.PART_ID AS PartId_PART_ID,
+  SRCWOA.STATUS AS WorkorderStatus_STATUS,
+  SRCWOAPARTS.PART_NO AS PartNumber_PART_NO,
+  SRCWOAPARTS.UNIT_PRICE AS UnitPrice_UNIT_PRICE,
+  SRCWOAPARTS.QUANTITY AS PartQuantity_QUANTITY,
+  SRCWOA.ASSET_CODE AS EquipmentType_ASSET_CODE,
+  SRCWOA.SERIAL_NO AS EquipmentSerialNumber_SERIAL_NO,
+  SRCWOA.WO_DATE AS WorkorderDate_WO_DATE,
+  SRCWO.WO_TYPE AS WorkorderType_WO_TYPE,
+  SRCWO.ACC_UNIT AS AccountUnit_ACC_UNIT,
+  CURRENT_TIMESTAMP() AS UPDATED_DATETIME,
+  'a2r-data-product-dataform : RiteWorkorderPart.sqlx' AS UPDATED_BY,
+  CURRENT_TIMESTAMP() AS CREATED_DATETIME,
+  'a2r-data-product-dataform : RiteWorkorderPart.sqlx' AS CREATED_BY
+FROM
+  ${ref('TBLWORKORDER')} AS SRCWO
+LEFT JOIN
+  ${ref('TBLWORKORDERASSET')} AS SRCWOA
+  ON SRCWO.WO_ID = SRCWOA.WO_ID
+LEFT JOIN
+  ${ref('TBLFIXEDASSET')} AS SRCTBLFA
+  ON upper(SRCTBLFA.ASSET_CODE) = upper(SRCWOA.ASSET_CODE)
+  AND upper(SRCTBLFA.SERIAL_NO) = upper(SRCWOA.SERIAL_NO)
+LEFT JOIN
+  ${ref('TBLWORKORDERASSETPARTS')} AS SRCWOAPARTS
+  ON SRCWOA.wo_id = SRCWOAPARTS.WO_ID
+
+-- UNIT TESTS
+-- Test: PrimaryKey should be unique
+SELECT
+  COUNT(*) AS failures
+FROM
+  (
+    SELECT
+      PrimaryKey
+    FROM
+      ${self()}
+    GROUP BY
+      PrimaryKey
+    HAVING
+      COUNT(*) > 1
+  );
+
+-- Test: Key ID columns should not be NULL
+SELECT
+  COUNT(*) AS failures
+FROM
+  ${self()}
+WHERE
+  WorkorderNum_WO_ID IS NULL
+  OR EquipmentSNId_ASSET_SN_ID IS NULL
+  OR PartId_PART_ID IS NULL;
+
+-- Test: Status fields should not be unexpectedly NULL
+SELECT
+  COUNT(*) AS failures
+FROM
+  ${self()}
+WHERE
+  WorkorderStatus_STATUS IS NULL;
+
+-- Test: Financial and quantity fields should not be negative
+SELECT
+  COUNT(*) AS failures
+FROM
+  ${self()}
+WHERE
+  UnitPrice_UNIT_PRICE < 0
+  OR PartQuantity_QUANTITY < 0;
+
+-- PROCESSING SUMMARY
+-- CTEs used: NONE
+-- JOINs used: 3 left joins connecting TBLWORKORDER, TBLWORKORDERASSET, TBLFIXEDASSET, and TBLWORKORDERASSETPARTS.
+-- Filters applied: Join conditions only.
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: 4 tests (PrimaryKey uniqueness, NOT NULL checks on key IDs, status field NULL check, non-negative price/quantity).
+-- Column descriptions source: from rules
+-- Output Mode used: sqlx
