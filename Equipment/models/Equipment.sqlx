@@ -1,0 +1,283 @@
+config {
+  type: "table",
+  name: "Equipment",
+  description: "This model transforms and consolidates equipment data from Maximom, applying business logic to rank, join, and derive key asset attributes. It serves as the foundational equipment entity for analytics.",
+  assertions: {
+    uniqueKey: ["EQUIPMENT_NUM"]
+  }
+}
+
+WITH
+  AssetRank AS (
+    SELECT
+      ASSETNUM,
+      ROWSTAMP,
+      RANK() OVER (
+        PARTITION BY
+          ASSETNUM
+        ORDER BY
+          ROWSTAMP DESC
+      ) as RNK
+    FROM
+      ${ref("us102762-np-pm-da-25938.A2R_STG","ASSET")}
+  ),
+  AssetAncestor AS (
+    SELECT
+      ASSETNUM,
+      ANCESTOR,
+      SITEID
+    FROM
+      (
+        SELECT
+          ASSETNUM,
+          ANCESTOR,
+          ah.SITEID,
+          ROW_NUMBER() OVER (
+            PARTITION BY
+              ASSETNUM
+            ORDER BY
+              HIERARCHYLEVELS DESC
+          ) as rnk
+        FROM
+          ${ref("us-maximo-prod.maximo.ASSETHIERARCHY")} ah
+        WHERE
+          ASSETNUM IS NOT NULL
+      )
+    WHERE
+      rnk = 1
+  ),
+  JunkReason AS (
+    SELECT DISTINCT
+      ASSETNUM,
+      SLB_JUNK_REASON
+    FROM
+      (
+        SELECT
+          LTRIM(RTRIM(T.ASSETNUM)) as ASSETNUM,
+          C.STATUSDATE,
+          LTRIM(RTRIM(T.DESCRIPTION)) AS SLB_JUNK_REASON,
+          RANK() OVER (
+            PARTITION BY
+              T.ASSETNUM
+            ORDER BY
+              C.STATUSDATE DESC,
+              C.TICKETID DESC
+          ) AS RANK_VALUE
+        FROM
+          ${ref("us102762-np-pm-da-25938.QA_MAXIMO.TICKET")} C
+          JOIN ${ref("us102762-np-pm-da-25938.QA_MAXIMO.ASSET")} T ON T.ASSETNUM = C.ASSETNUM
+        WHERE
+          C.STATUS IN ('PREJUNK', 'DECOMMISSIONED')
+          AND T.SLB_JUNK_REASON IS NOT NULL
+      )
+    WHERE
+      RANK_VALUE = 1
+  ),
+  LatestDocsPerAsset AS (
+    SELECT
+      * EXCEPT(rnk)
+    FROM
+      (
+        SELECT
+          b.ASSETNUM,
+          a.ID,
+          'ASSET' as SRC,
+          ROW_NUMBER() OVER (
+            PARTITION BY
+              b.ASSETNUM,
+              a.DOCTYPE
+            ORDER BY
+              a.ROWSTAMP DESC
+          ) as rnk
+        FROM
+          ${ref("us102762-np-pm-da-25938.QA_MAXIMO.DOCLINKS")} a
+          INNER JOIN ${ref("us102762-np-pm-da-25938.A2R_STG.ASSET")} b ON a.OWNERID = b.ASSETUID
+        WHERE
+          a.OWNERTABLE = 'ASSET'
+          AND a.DOCTYPE = 'Material Cert'
+        UNION ALL
+        SELECT
+          b.ASSETNUM,
+          a.ID,
+          'WORKORDER' as SRC,
+          ROW_NUMBER() OVER (
+            PARTITION BY
+              b.ASSETNUM,
+              a.DOCTYPE
+            ORDER BY
+              a.ROWSTAMP DESC
+          ) as rnk
+        FROM
+          ${ref("us102762-np-pm-da-25938.QA_MAXIMO.DOCLINKS")} a
+          INNER JOIN ${ref("us102762-np-pm-da-25938.A2R_STG.WORKORDER")} b ON a.OWNERID = b.WORKORDERID
+        WHERE
+          a.OWNERTABLE = 'WORKORDER'
+          AND a.DOCTYPE = 'Material Cert'
+      )
+    WHERE
+      rnk = 1
+  ),
+  MaterialCertDocs AS (
+    SELECT DISTINCT
+      OWNERID,
+      DOCTYPE
+    FROM
+      ${ref("us-maximo-prod.maximo.DOCLINKS")}
+    WHERE
+      DOCTYPE = 'Material Cert'
+  )
+SELECT
+  a.ASSETNUM AS EQUIPMENT_NUM,
+  a.SERIALNUM AS SERIAL_NUM,
+  a.ASSETID AS EQUIPMENT_ID,
+  AA.ANCESTOR AS TOPLEVELEQUIPMENT,
+  AA.SITEID AS SITEID,
+  a.SLB_ASSET_SN_ID AS EQUIPMENT_SN_ID,
+  c.Activity AS Activity,
+  c.SLB_SUBFAMILY AS SUB_FAMILY,
+  c.TYPECATEGORY AS TYPECATEGORY,
+  a.SLB_GBV AS GBV,
+  a.SLB_NBV AS NBV,
+  a.STATUS AS STATUS,
+  a.SLB_UNIT_FA AS UNIT_FA,
+  a.EQ1 AS PM_STATUS,
+  a.EQ7 AS EQ7,
+  a.EQ8 AS MAINTENANCE_STATUS,
+  a.EQ10 AS REASON_OF_PM_STATUS,
+  a.SLB_MFGDATE AS MFGDATE,
+  a.INSTALLDATE AS COMMISSION_DATE,
+  a.MANUFACTURER AS MANUFACTURER,
+  a.SLB_ASSETPARTNUM AS PART_NUMBER,
+  a.LOCATION AS EQUIPMENT_LOCATION,
+  a.SLB_OWNER_LOCATION AS EQUIPMENT_OWNER_LOCATION,
+  a.ASSETTYPE AS EQUIPMENT_TYPE,
+  a.ASSETUID AS EQUIPMENT_UID,
+  a.SLB_LOCATEDSITE AS LOCATED_SITE,
+  a.SLB_ASSETGROUP AS ASSET_GROUP,
+  a.SLB_ASSETMOVEMENTSTATUS AS EQUIPMENT_MOVEMENT_STATUS,
+  a.SLB_MOD_STATUS AS MODIFICATION_STATUS,
+  a.SLB_PMDUE AS PM_DUE,
+  a.SLB_FCODUE AS FCO_DUE,
+  a.SLB_TECHST_COL AS TECH_ST_COL,
+  a.SLB_TECHSTATUS AS TECHNICAL_STATUS,
+  a.DESCRIPTION AS EQUIPMENT_DESCRIPTION,
+  a.STATUSDATE AS EQUIPMENT_STATUS_DATE,
+  a.CHANGEDATE AS EQUIPMENT_CHANGE_DATE,
+  a.SLB_CURR_PHYLOC AS PHYSICAL_LOCATION,
+  a.SLB_INSERVICEDATE AS INSERVICE_DATE,
+  a.PARENT AS PARENT,
+  a.SLB_SPL_HASSAMPLE AS HAS_SAMPLE,
+  a.SLB_LOGISTICSTATUS AS LOGISTIC_STATUS,
+  a.PLUSTMODEL AS PLUST_MODEL,
+  a.PLUSTYEAR AS PLUST_YEAR,
+  a.SLB_EDFSTATUS AS EDF_STATUS,
+  a.SLB_OANUM AS OANUMBER,
+  a.SLB_PRODUCTIONNUMBER AS PRODUCTION_NUMBER,
+  a.TOTALCOST AS TOTAL_COST,
+  a.TOTDOWNTIME AS TOT_DOWN_TIME,
+  a.YTDCOST AS YTD_COST,
+  a.SLB_LEGACYASSETNUM AS LEGACY_ASSETNUM,
+  a.SLB_NEWASSETNUM AS NEW_ASSETNUM,
+  a.EQ23 AS BUILD_DATE,
+  a.SLB_MODSTATUS_COLOR AS MODSTATUS_COLOR,
+  a.SLB_COMPANYCODE AS CompanyCode,
+  b.SLB_LEGALENTITY AS LegalEntity,
+  b.SLB_CURRLOCATIONTYPE AS CURRENT_LOCATION_TYPE,
+  b.SLB_DFP AS DFP,
+  b.SLB_HRSSINCELASTSL AS HRS_SINCE_LAST_SL,
+  b.SLB_HRSPUMP AS HOURS_PUMP,
+  b.SLB_EDT AS HOURS_EDT,
+  b.SLB_CREATEBY AS CREATEDBY,
+  b.SLB_STAMPEDSN AS STAMPED_SN,
+  b.SLB_DOWNFORREPAIR AS DOWN_FOR_REPAIR,
+  d.SLB_RIG_NAME AS RIG_NAME,
+  b.SLB_STAMPEDFC AS STAMPED_FC,
+  b.SLB_TEMPMAX AS MAX_TEMP,
+  b.SLB_SHOCKMAXLEVEL AS MAX_SHOCK_LEVEL,
+  b.SLB_SHOCKMAXDUR AS MAX_DUR_SHOCK,
+  b.SLB_SHOPUSEONLY AS SHOP_USE_ONLY,
+  b.SLB_ASSIGNEDCLIENT AS ASSIGNED_CLIENT,
+  b.SLB_DAM_BEYOND_REP AS DAMAGED_BEYOND_REPAIR,
+  b.SLB_TSDFP AS TOOLSET_DFP,
+  D.SLB_COMPANY_NAME AS COMPANY_NAME,
+  DOC.DOCLINKSID,
+  DOC.MATERIAL,
+  DOC.MATERIAL_TYPE,
+  DOC.VENDOR,
+  DOC.YIELDSTRENGTH,
+  DOC.MATERIALCERTDATE,
+  DOC.DOCUMENT,
+  DOC.DOCVERSION AS DOC_VERSION,
+  DOC.GETLATESTVERSION AS GETLATEST_VERSION,
+  DOC.OWNERID AS OWNER_ID,
+  DOC.OWNERTABLE AS OWNER_TABLE,
+  DOC.REFERENCE AS REFERENCE,
+  SJR.SLB_JUNK_REASON,
+  d.SLB_FIELDNAME AS FIELDNAME,
+  d.SLB_OPERATION_STATUS AS OPERATION_STATUS,
+  d.SLB_RIG_TYPE AS RIG_TYPE,
+  d.SLB_WELL_NAME AS WELL_NAME,
+  'EAR-AA-2392' AS SOURCE,
+  CURRENT_TIMESTAMP() AS UPDATED_DATETIME,
+  CURRENT_TIMESTAMP() AS PROCESSING_DATE,
+  'a2r-data-product-dataform : Equipment.sqlx' AS UPDATED_BY,
+  CURRENT_TIMESTAMP() AS CREATED_DATETIME,
+  'a2r-data-product-dataform : Equipment.sqlx' AS CREATED_BY
+FROM
+  ${ref("us102762-np-pm-da-25938.A2R_STG","ASSET")} a
+  INNER JOIN AssetRank k ON a.ASSETNUM = k.ASSETNUM AND a.ROWSTAMP = k.ROWSTAMP
+  LEFT JOIN AssetAncestor aa ON a.ASSETNUM = aa.ASSETNUM
+  LEFT JOIN ${ref("us-maximo-prod.maximo.SLB_ASSETEXT")} b ON a.ASSETUID = b.ASSETUID
+  LEFT JOIN ${ref("us-maximo-prod.maximo.SLBTYPE")} c ON a.ASSETTYPE = c.ASSETTYPE
+  LEFT JOIN ${ref("us-maximo-prod.maximo.SLB_OPERATIONS")} d ON LTRIM(RTRIM(a.SLB_CURR_PHYLOC)) = LTRIM(RTRIM(d.SLB_OPERATIONNUMBER))
+  LEFT JOIN LatestDocsPerAsset doc ON LTRIM(RTRIM(a.ASSETNUM)) = LTRIM(RTRIM(doc.ASSETNUM))
+  LEFT JOIN MaterialCertDocs pp ON LTRIM(RTRIM(a.ASSETUID)) = LTRIM(RTRIM(pp.OWNERID))
+  LEFT JOIN JunkReason sjr ON sjr.ASSETNUM = a.ASSETNUM
+WHERE
+  k.RNK = 1
+
+-- UNIT TESTS
+-- Test: EQUIPMENT_NUM must be unique
+SELECT
+  EQUIPMENT_NUM,
+  COUNT(*)
+FROM
+  ${self()}
+GROUP BY
+  EQUIPMENT_NUM
+HAVING
+  COUNT(*) > 1;
+
+-- Test: EQUIPMENT_NUM must not be null
+SELECT
+  COUNT(*) AS failures
+FROM
+  ${self()}
+WHERE
+  EQUIPMENT_NUM IS NULL;
+
+-- Test: STATUS must not be null
+SELECT
+  COUNT(*) AS failures
+FROM
+  ${self()}
+WHERE
+  STATUS IS NULL;
+
+-- Test: Decommissioned assets must have a junk reason
+SELECT
+  COUNT(*) AS failures
+FROM
+  ${self()}
+WHERE
+  STATUS IN ('DECOMMISSIONED', 'PREJUNK') AND SLB_JUNK_REASON IS NULL;
+  
+-- PROCESSING SUMMARY
+-- CTEs used: AssetRank, AssetAncestor, JunkReason, LatestDocsPerAsset, MaterialCertDocs
+-- JOINs used: INNER JOIN on AssetRank to get latest record. LEFT JOINs to AssetAncestor, SLB_ASSETEXT, SLBTYPE, SLB_OPERATIONS, LatestDocsPerAsset, MaterialCertDocs, and JunkReason to enrich asset data.
+-- Filters applied: Final filter `k.RNK = 1` ensures only the most recent asset record is selected.
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: uniqueness, not_null, referential_integrity
+-- Column descriptions source: from rules
+-- Output Mode used: sqlx
