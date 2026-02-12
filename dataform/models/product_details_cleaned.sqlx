@@ -1,0 +1,55 @@
+config {
+  type: "view",
+  schema: "product_catalog_dataset",
+  name: "product_details_cleaned",
+  description: "Cleaned version of the product_details table, with duplicates removed and data types corrected. This model addresses the data quality issues found during ingestion, such as duplicate rows and incorrect data types.",
+  assertions: {
+    uniqueKey: ["SKU"],
+    nonNull: ["SKU"]
+  },
+  tags: ["cleaned", "products"]
+}
+
+SELECT DISTINCT
+  SKU,
+  ItemName,
+  Brand,
+  Category,
+  Color,
+  Size,
+  CAST(RetailPrice AS NUMERIC) AS RetailPrice,
+  AvailabilityStatus
+FROM
+  ${ref("product_details")}
+
+-- UNIT TESTS
+
+-- Test: SKU should not contain any NULL values. This is also enforced by the nonNull assertion.
+SELECT COUNT(*) AS failures
+FROM ${self()}
+WHERE SKU IS NULL;
+
+-- Test: AvailabilityStatus must be one of the allowed values ('''In Stock''', '''Out of Stock''', '''Limited Stock''').
+SELECT COUNT(*) AS failures
+FROM ${self()}
+WHERE AvailabilityStatus NOT IN ('''In Stock''', '''Out of Stock''', '''Limited Stock''');
+
+-- Test: RetailPrice should not be a negative number, as prices must be positive.
+SELECT COUNT(*) AS failures
+FROM ${self()}
+WHERE RetailPrice < 0;
+
+-- Test: After cleaning, there should be no duplicate SKUs. This is also enforced by the uniqueKey assertion.
+SELECT COUNT(SKU) - COUNT(DISTINCT SKU) AS failures
+FROM ${self()};
+
+
+-- PROCESSING SUMMARY
+-- CTEs used: NONE
+-- JOINs used: NONE
+-- Filters applied: Used SELECT DISTINCT to remove duplicate rows from the source.
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: 4 tests: SKU not null, AvailabilityStatus domain check, RetailPrice non-negative check, and SKU uniqueness.
+-- Column descriptions source: synthesized
+-- Output Mode used: sqlx
