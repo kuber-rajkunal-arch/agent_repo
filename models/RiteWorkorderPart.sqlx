@@ -1,0 +1,77 @@
+config {
+    type: "table",
+    schema: "RITE_SRC",
+    name: "RiteWorkorderPart",
+    description: "This model joins work orders with asset and part information, creating a consolidated view of parts used in work orders.",
+    tags: ["rite", "workorder", "asset", "parts"],
+    assertions: {
+        uniqueKey: ["PrimaryKey"]
+    }
+}
+
+SELECT
+    concat(coalesce(SRCWO.WO_ID ,0),'&',coalesce(SRCWOA.ASSET_SN_ID,0),'&',coalesce(SRCWOAPARTS.PART_ID ,0)) as PrimaryKey,
+    SRCWO.WO_ID as WorkorderNum_WO_ID,
+    SRCWOA.ASSET_SN_ID as EquipmentSNId_ASSET_SN_ID,
+    SRCWOAPARTS.PART_ID as PartId_PART_ID,
+    SRCWOA.STATUS as WorkorderStatus_STATUS,
+    SRCWOAPARTS.PART_NO as PartNumber_PART_NO,
+    SRCWOAPARTS.UNIT_PRICE as UnitPrice_UNIT_PRICE,
+    SRCWOAPARTS.QUANTITY as PartQuantity_QUANTITY,
+    SRCWOA.ASSET_CODE as EquipmentType_ASSET_CODE,
+    SRCWOA.SERIAL_NO as EquipmentSerialNumber_SERIAL_NO,
+    SRCWOA.WO_DATE as WorkorderDate_WO_DATE,
+    SRCWO.WO_TYPE as WorkorderType_WO_TYPE,
+    SRCWO.ACC_UNIT as AccountUnit_ACC_UNIT,
+    CURRENT_TIMESTAMP() as UPDATED_DATETIME,
+    'a2r-data-product-dataform : RiteWorkorderPart.sqlx' as UPDATED_BY,
+    CURRENT_TIMESTAMP() as CREATED_DATETIME,
+    'a2r-data-product-dataform : RiteWorkorderPart.sqlx' as CREATED_BY
+FROM
+    ${ref("TBLWORKORDER")} AS SRCWO
+LEFT JOIN
+    ${ref("TBLWORKORDERASSET")} AS SRCWOA
+    ON SRCWO.WO_ID = SRCWOA.WO_ID
+LEFT JOIN
+    ${ref("TBLFIXEDASSET")} AS SRCTBLFA
+    ON upper(SRCTBLFA.ASSET_CODE) = upper(SRCWOA.ASSET_CODE) AND upper(SRCTBLFA.SERIAL_NO) = upper(SRCWOA.SERIAL_NO)
+LEFT JOIN
+    ${ref("TBLWORKORDERASSETPARTS")} AS SRCWOAPARTS
+    ON SRCWOA.wo_id = SRCWOAPARTS.WO_ID
+
+-- UNIT TESTS
+-- Test: PrimaryKey must be unique
+SELECT COUNT(*) AS failures
+FROM ${self()}
+GROUP BY PrimaryKey
+HAVING COUNT(*) > 1;
+
+-- Test: WorkorderNum_WO_ID should not be null
+SELECT COUNT(*) AS failures
+FROM ${self()}
+WHERE WorkorderNum_WO_ID IS NULL;
+
+-- Test: PartId_PART_ID should not be null
+SELECT COUNT(*) AS failures
+FROM ${self()}
+WHERE PartId_PART_ID IS NULL;
+
+-- Test: Part quantity must not be negative
+SELECT COUNT(*) AS failures
+FROM ${self()}
+WHERE PartQuantity_QUANTITY < 0;
+
+-- Test: Unit price must not be negative
+SELECT COUNT(*) AS failures
+FROM ${self()}
+WHERE UnitPrice_UNIT_PRICE < 0;
+
+-- PROCESSING SUMMARY
+-- CTEs used: NONE
+-- JOINs used: 3 LEFT JOINs connecting TBLWORKORDER, TBLWORKORDERASSET, TBLFIXEDASSET, and TBLWORKORDERASSETPARTS.
+-- Filters applied: Join conditions use upper() for case-insensitive matching. coalesce() is used to handle potential NULLs in the PrimaryKey concatenation.
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: 5 tests covering uniqueness of the primary key, non-null constraints on key fields, and value validation for quantity and price.
+-- Column descriptions source: from rules
+-- Output Mode used: sqlx
