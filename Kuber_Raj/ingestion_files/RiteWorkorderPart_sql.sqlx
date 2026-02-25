@@ -1,0 +1,102 @@
+config {
+    type: "table",
+    schema: "SAPC46",
+    name: "RiteWorkorderPart_sql",
+    description: "This model represents individual parts associated with a work order, combining data from sales, delivery, and material master tables.",
+    tags: ["SAP", "WORK_ORDER", "SUPPLY_CHAIN"],
+    assertions: {
+        uniqueKey: ["WorkOrderPart_Key"]
+    }
+}
+
+WITH Rite_Workorder_Part_pre_0 AS (
+  SELECT MANDT, VBELN, AUART, VTWEG, SPART, VKORG
+  FROM ${ref("VBAK")}
+  WHERE trim(MANDT) = '100'
+),
+Rite_Workorder_Part_pre_1 AS (
+  SELECT MANDT, VBELN, POSNR, MATNR, ZMENG, ZIEME, NETWR, WAERK, KWMENG
+  FROM ${ref("VBAP")}
+  WHERE trim(MANDT) = '100'
+),
+Rite_Workorder_Part_pre_2 AS (
+  SELECT MANDT, OBJNR, STAT, INACT
+  FROM ${ref("JEST")}
+  WHERE trim(MANDT) = '100'
+),
+Rite_Workorder_Part_pre_3 AS (
+  SELECT MANDT, OBJNR, STSMA, CHGNR
+  FROM ${ref("JSTO")}
+  WHERE trim(MANDT) = '100'
+),
+Rite_Workorder_Part_pre_4 AS (
+  SELECT MANDT, VBELN, POSNR, BSTKD
+  FROM ${ref("VBKD")}
+  WHERE trim(MANDT) = '100'
+),
+Rite_Workorder_Part_pre_5 AS (
+  SELECT MANDT, VBELN, POSNR, EDATU, WEPOS
+  FROM ${ref("VBEP")}
+  WHERE trim(MANDT) = '100'
+),
+Rite_Workorder_Part_pre_6 AS (
+  SELECT MANDT, MATNR, MTART
+  FROM ${ref("MARA")}
+  WHERE trim(MANDT) = '100'
+),
+Rite_Workorder_Part_pre_7 AS (
+  SELECT MANDT, MATNR, SPRAS, MAKTX
+  FROM ${ref("MAKT")}
+  WHERE trim(MANDT) = '100'
+),
+Rite_Workorder_Part_pre_8 AS (
+  SELECT MANDT, VGBEL, VGPOS, VBELN, POSNR
+  FROM ${ref("LIPS")}
+  WHERE trim(MANDT) = '100'
+),
+Rite_Workorder_Part_pre_9 AS (
+  SELECT MANDT, VBELN, WADAT_IST
+  FROM ${ref("LIKP")}
+  WHERE trim(MANDT) = '100'
+)
+SELECT
+  VBAP.VBELN || '-' || VBAP.POSNR AS WorkOrderPart_Key,
+  VBAP.VBELN AS WorkOrder_Key,
+  VBAP.MATNR AS Product_Key,
+  VBAP.POSNR AS WorkOrderPartNumber,
+  MARA.MTART AS ProductType,
+  MAKT.MAKTX AS WorkOrderPartDescription,
+  JEST.STAT AS WorkOrderPartStatus,
+  JSTO.STSMA AS WorkOrderPartSystemStatus,
+  CASE WHEN JEST.STAT = 'I0045' THEN 'Y' ELSE 'N' END AS isDeleted,
+  VBAP.KWMENG AS WorkOrderPartRequiredQuantity,
+  VBAP.KWMENG AS WorkOrderPartCommittedQuantity,
+  NULL AS WorkOrderPartActualQuantity,
+  NULL AS WorkOrderPartScrappedQuantity,
+  VBAP.ZIEME AS WorkOrderPartUOM,
+  VBEP.EDATU AS WorkOrderPartRequiredDate,
+  VBEP.EDATU AS WorkOrderPartCommitDate,
+  LIKP.WADAT_IST AS WorkOrderPartActualDate,
+  NULL AS WorkOrderPartScrappedDate
+FROM Rite_Workorder_Part_pre_1 AS VBAP
+LEFT JOIN Rite_Workorder_Part_pre_5 AS VBEP
+  ON VBAP.VBELN = VBEP.VBELN AND VBAP.POSNR = VBEP.POSNR
+LEFT JOIN Rite_Workorder_Part_pre_0 AS VBAK
+  ON VBAK.VBELN = VBAP.VBELN
+LEFT JOIN Rite_Workorder_Part_pre_4 AS VBKD
+  ON VBAP.VBELN = VBKD.VBELN AND VBAP.POSNR = VBKD.POSNR
+LEFT JOIN Rite_Workorder_Part_pre_8 AS LIPS
+  ON VBAP.VBELN = LIPS.VGBEL AND VBAP.POSNR = LIPS.VGPOS
+LEFT JOIN Rite_Workorder_Part_pre_9 AS LIKP
+  ON LIPS.VBELN = LIKP.VBELN
+LEFT JOIN Rite_Workorder_Part_pre_6 AS MARA
+  ON VBAP.MATNR = MARA.MATNR
+LEFT JOIN Rite_Workorder_Part_pre_7 AS MAKT
+  ON MARA.MATNR = MAKT.MATNR AND MAKT.SPRAS = 'E'
+LEFT JOIN Rite_Workorder_Part_pre_2 AS JEST
+  ON VBAP.OBJNR = JEST.OBJNR AND JEST.INACT <> 'X'
+LEFT JOIN Rite_Workorder_Part_pre_3 AS JSTO
+  ON JEST.OBJNR = JSTO.OBJNR
+QUALIFY ROW_NUMBER() OVER (PARTITION BY WorkOrderPart_Key ORDER BY WorkOrderPart_Key) = 1
+
+---
