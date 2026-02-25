@@ -1,0 +1,126 @@
+config {
+  type: "table",
+  schema: "AeroSrc",
+  name: "flight_health",
+  description: "This model calculates flight health and risk scores based on telemetry, maintenance, and audit data.",
+  tags: ["flight_ops", "aero_analytics"]
+}
+
+WITH
+  TelemetryExtraction AS (
+    SELECT
+      *,
+      JSON_VALUE(TELEMETRY_JSON, '$.vibration') AS vibration,
+      JSON_VALUE(TELEMETRY_JSON, '$.pressure') AS pressure,
+      (
+        SAFE_CAST(JSON_VALUE(TELEMETRY_JSON, '$.vibration') AS FLOAT64) /
+        AVG(SAFE_CAST(JSON_VALUE(TELEMETRY_JSON, '$.vibration') AS FLOAT64)) OVER (
+          PARTITION BY
+            AIRCRAFT_ID
+          ORDER BY
+            FLIGHT_TS ROWS BETWEEN 10 PRECEDING AND CURRENT ROW
+        )
+      ) AS VibrationIntensityIndex
+    FROM
+      ${ref("Flight")}
+    WHERE
+      JSON_VALUE(TELEMETRY_JSON, '$.vibration') IS NOT NULL AND JSON_VALUE(TELEMETRY_JSON, '$.vibration') != 'NaN'
+  ),
+  MaintenanceAlignment AS (
+    SELECT
+      t.*,
+      m.EVENT_START_TS,
+      m.notes AS maintenance_notes,
+      LEAD(m.EVENT_START_TS, 1) OVER (
+        PARTITION BY
+          t.AIRCRAFT_ID
+        ORDER BY
+          t.FLIGHT_TS
+      ) AS next_maintenance_ts
+    FROM
+      TelemetryExtraction AS t
+      LEFT JOIN ${ref("Maintenance")} AS m ON t.AIRCRAFT_ID = m.AIRCRAFT_ID
+      AND t.FLIGHT_TS < m.EVENT_START_TS
+  ),
+  ConditionalRiskClassification AS (
+    SELECT
+      ma.*,
+      au.SAFETY_FLAG,
+      au.AUDIT_SCORE,
+      CASE
+        WHEN au.SAFETY_FLAG = 'Y' AND ma.ENGINE_TEMP > 980 THEN 'IMMEDIATE_AOG'
+        WHEN ma.FATIGUE_INDEX > 0.8 AND ma.FATIGUE_INDEX < 0.9 AND ma.ENGINE_CYCLES > 5 THEN 'ACCELERATED_WEAR'
+        WHEN ma.VibrationIntensityIndex > 1.5 THEN 'SENSOR_ANOMALY'
+        ELSE 'OPERATIONAL_STABLE'
+      END AS RiskClassification
+    FROM
+      MaintenanceAlignment AS ma
+      LEFT JOIN ${ref("Audit")} AS au ON ma.AIRCRAFT_ID = au.AIRCRAFT_ID
+  ),
+  AggregateScoring AS (
+    SELECT
+      *,
+      DATE_DIFF(next_maintenance_ts, FLIGHT_TS, DAY) AS Days_To_Repair,
+      ARRAY_TO_STRING(
+        [
+          (
+            CASE
+              WHEN SAFETY_FLAG = 'Y' AND ENGINE_TEMP > 980 THEN 'A'
+              ELSE NULL
+            END
+          ),
+          (
+            CASE
+              WHEN FATIGUE_INDEX > 0.8 AND FATIGUE_INDEX < 0.9 AND ENGINE_CYCLES > 5 THEN 'B'
+              ELSE NULL
+            END
+          ),
+          (
+            CASE
+              WHEN VibrationIntensityIndex > 1.5 THEN 'C'
+              ELSE NULL
+            END
+          )
+        ],
+        ', '
+      ) AS REASONING_SUMMARY,
+      LEAST(
+        100,
+        (
+          (0.4 * (ENGINE_TEMP / 1100)) + (0.3 * FATIGUE_INDEX) + (0.3 * (100 - AUDIT_SCORE))
+        ) + (
+          CASE
+            WHEN LOWER(maintenance_notes) LIKE '%urgent%'
+            OR LOWER(maintenance_notes) LIKE '%emergency%' THEN 15
+            ELSE 0
+          END
+        )
+      ) AS FLIGHT_INTELLIGENCE_SCORE
+    FROM
+      ConditionalRiskClassification
+  )
+SELECT
+  AIRCRAFT_ID,
+  FLIGHT_TS,
+  VibrationIntensityIndex,
+  CASE
+    WHEN Days_To_Repair < 0 THEN NULL
+    ELSE Days_To_Repair
+  END AS Days_To_Repair,
+  FLIGHT_INTELLIGENCE_SCORE,
+  REASONING_SUMMARY,
+  RiskClassification,
+  CASE
+    WHEN Days_To_Repair < 0 THEN 'LOGGING_ERROR'
+    ELSE 'VALID'
+  END AS record_status
+FROM
+  AggregateScoring
+QUALIFY
+  ROW_NUMBER() OVER (
+    PARTITION BY
+      AIRCRAFT_ID,
+      FLIGHT_TS
+    ORDER BY
+      next_maintenance_ts
+  ) = 1 AND FLIGHT_INTELLIGENCE_SCORE > 65
