@@ -1,0 +1,42 @@
+-- UNIT TESTS
+-- Test for uniqueness of the primary key
+SELECT COUNT(*) AS failures
+FROM (
+  SELECT
+    WorkOrderPart_Key,
+    COUNT(1) AS num_records
+  FROM ${self()}
+  GROUP BY WorkOrderPart_Key
+  HAVING num_records > 1
+);
+
+-- Test that the primary key is never NULL
+SELECT COUNT(*) AS failures
+FROM ${self()}
+WHERE WorkOrderPart_Key IS NULL;
+
+-- Test that the foreign key to WorkOrder is never NULL
+SELECT COUNT(*) AS failures
+FROM ${self()}
+WHERE WorkOrder_Key IS NULL;
+
+-- Test for valid domain values in the isDeleted flag
+SELECT COUNT(*) AS failures
+FROM ${self()}
+WHERE isDeleted NOT IN ('Y', 'N');
+
+-- Test that required quantity is non-negative
+SELECT COUNT(*) AS failures
+FROM ${self()}
+WHERE WorkOrderPartRequiredQuantity < 0;
+
+---
+-- PROCESSING SUMMARY
+-- CTEs used: Rite_Workorder_Part_pre_0, Rite_Workorder_Part_pre_1, Rite_Workorder_Part_pre_2, Rite_Workorder_Part_pre_3, Rite_Workorder_Part_pre_4, Rite_Workorder_Part_pre_5, Rite_Workorder_Part_pre_6, Rite_Workorder_Part_pre_7, Rite_Workorder_Part_pre_8, Rite_Workorder_Part_pre_9
+-- JOINs used: Multiple LEFT JOINs with VBAP as the central table, connecting sales, delivery, and material master data.
+-- Filters applied: Filtered for client '100' (MANDT) on all source CTEs. Additional join conditions applied to filter for active statuses (JEST.INACT) and english descriptions (MAKT.SPRAS). A QUALIFY statement is used to deduplicate records based on the WorkOrderPart_Key.
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: 5 tests including uniqueness, non-null constraints, domain validation for flags, and value checks.
+-- Column descriptions source: from rules
+-- Output Mode used: sqlx
