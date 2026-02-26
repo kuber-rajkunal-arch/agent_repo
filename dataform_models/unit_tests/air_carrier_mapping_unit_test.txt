@@ -1,0 +1,21 @@
+-- UNIT TESTS
+-- Test for duplicate flight IDs
+SELECT COUNT(*) AS failures FROM (SELECT FLIGHT_ID, COUNT(*) FROM ${self()} GROUP BY FLIGHT_ID HAVING COUNT(*) > 1);
+-- Test for null aircraft IDs
+SELECT COUNT(*) AS failures FROM ${self()} WHERE AIRCRAFT_ID IS NULL;
+-- Test for negative risk scores
+SELECT COUNT(*) AS failures FROM ${self()} WHERE AGGREGATE_HEALTH_RISK_SCORE < 0;
+-- Test for invalid operational status values
+SELECT COUNT(*) AS failures FROM ${self()} WHERE OPERATIONAL_STATUS NOT IN ('IMMEDIATE_GROUNDING', 'MONITOR_TREND', 'OPERATIONAL');
+-- Test for pressure efficiency ratio being a valid number
+SELECT COUNT(*) AS failures FROM ${self()} WHERE PRESSURE_EFFICIENCY_RATIO IS NULL AND fuel_val IS NOT NULL;
+
+-- PROCESSING SUMMARY
+-- CTEs used: flight_metrics, health_trends, maintenance_window, transformed_unified, final_intelligence
+-- JOINs used: LEFT JOIN on AIRCRAFT_ID and a time window between flight and maintenance events. LEFT JOIN to audit data on AIRCRAFT_ID.
+-- Filters applied: JOIN conditions.
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: uniqueness, not-null, domain validation, and data validity checks.
+-- Column descriptions source: from rules
+-- Output Mode used: sqlx
