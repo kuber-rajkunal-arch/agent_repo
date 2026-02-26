@@ -1,0 +1,75 @@
+config {
+  type: "table",
+  name: "FlightDeepMaintenanceFact",
+  schema: "AeroSrc",
+  description: "Fact table combining flight and maintenance data with calculated risk metrics.",
+  tags: ["facts", "maintenance", "flight_health"]
+}
+
+WITH
+  flight_maintenance_join AS (
+    SELECT
+      f.FLIGHT_ID,
+      f.AIRCRAFT_ID,
+      f.ENGINE_TEMP,
+      f.FATIGUE_INDEX,
+      CAST(
+        JSON_VALUE(f.TELEMETRY_JSON, '''$.engine.vibration''') AS FLOAT64
+      ) AS vib,
+      m.MAINT_EVENT_ID,
+      m.EVENT_START_TS,
+      m.EVENT_END_TS,
+      f.FLIGHT_TS
+    FROM
+      ${ref("Flight")} AS f
+      JOIN ${ref("Maintenance")} AS m ON f.AIRCRAFT_ID = m.AIRCRAFT_ID
+    WHERE
+      f.FLIGHT_TS > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 365 DAY)
+  ),
+  vibration_stats AS (
+    SELECT
+      *,
+      AVG(vib) OVER (PARTITION BY AIRCRAFT_ID) AS avg_vib,
+      STDDEV(vib) OVER (PARTITION BY AIRCRAFT_ID) AS stddev_vib
+    FROM
+      flight_maintenance_join
+  ),
+  calculated_metrics AS (
+    SELECT
+      *,
+      (
+        (ENGINE_TEMP / 1100) * 40
+      ) + (FATIGUE_INDEX * 30) + (
+        (vib / 2.0) * 30
+      ) AS risk_score,
+      (vib - avg_vib) / NULLIF(stddev_vib, 0) AS vibration_z_score,
+      DATE_DIFF(CAST(EVENT_END_TS AS DATE), CAST(EVENT_START_TS AS DATE), DAY) AS day_delta
+    FROM
+      vibration_stats
+  ),
+  final_logic AS (
+    SELECT
+      *,
+      CASE
+        WHEN day_delta < 0 THEN 'ERR_NEG'
+        ELSE 'PASS'
+      END AS integrity_code,
+      CASE
+        WHEN risk_score > 80 THEN 'HIGH_RISK_IMMEDIATE_REVIEW'
+        WHEN vibration_z_score > 2 THEN 'VIBRATION_ANOMALY_MONITOR'
+        ELSE 'OPERATIONAL_NORMAL'
+      END AS operational_status
+    FROM
+      calculated_metrics
+  )
+SELECT
+  FLIGHT_ID,
+  AIRCRAFT_ID,
+  MAINT_EVENT_ID,
+  risk_score AS RISK_SCORE,
+  vibration_z_score AS VIB_Z_SCORE,
+  operational_status AS OP_STATUS,
+  integrity_code AS INTEGRITY_FLAG,
+  CURRENT_TIMESTAMP() AS LOAD_TS
+FROM
+  final_logic
