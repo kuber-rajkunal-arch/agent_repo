@@ -1,0 +1,26 @@
+-- UNIT TESTS
+-- Test that primary key components are not null
+SELECT COUNT(*) AS failures FROM ${self()} WHERE FLIGHT_ID IS NULL OR MAINT_EVENT_ID IS NULL;
+
+-- Test for uniqueness of the flight/maintenance event combination
+SELECT COUNT(*) AS failures FROM (SELECT FLIGHT_ID, MAINT_EVENT_ID, COUNT(*) FROM ${self()} GROUP BY FLIGHT_ID, MAINT_EVENT_ID HAVING COUNT(*) > 1);
+
+-- Test that the integrity flag is always PASS
+SELECT COUNT(*) AS failures FROM ${self()} WHERE INTEGRITY_FLAG != 'PASS';
+
+-- Test for valid OP_STATUS values
+SELECT COUNT(*) AS failures FROM ${self()} WHERE OP_STATUS NOT IN ('CRITICAL_AOG_REQUIRED', 'VIBRATION_ANOMALY_DETECTED', 'STABLE');
+
+-- Test that risk score is not negative
+SELECT COUNT(*) AS failures FROM ${self()} WHERE RISK_SCORE < 0;
+
+
+-- PROCESSING SUMMARY
+-- CTEs used: flight_stats, calculated_fields, final_logic
+-- JOINs used: JOIN on AIRCRAFT_ID between flight and maintenance data.
+-- Filters applied: Flights from the last 365 days.
+-- Incremental logic: absent. The procedural batching (LIMIT) was omitted to process all data.
+-- pre_operations emitted: no
+-- Unit tests emitted: 5 tests: pkey not null, pkey uniqueness, integrity flag, status domain, non-negative risk score.
+-- Column descriptions source: from rules
+-- Output Mode used: sqlx
