@@ -1,0 +1,27 @@
+-- UNIT TESTS
+-- Test: PrimaryKey is unique
+SELECT COUNT(*) AS failures FROM (
+  SELECT PrimaryKey FROM ${self.name} GROUP BY PrimaryKey HAVING COUNT(*) > 1
+);
+
+-- Test: WorkorderNum_WO_ID is not null
+SELECT COUNT(*) AS failures FROM ${self.name} WHERE WorkorderNum_WO_ID IS NULL;
+
+-- Test: EquipmentSNId_ASSET_SN_ID is not null
+SELECT COUNT(*) AS failures FROM ${self.name} WHERE EquipmentSNId_ASSET_SN_ID IS NULL;
+
+-- Test: PartId_PART_ID is not null
+SELECT COUNT(*) AS failures FROM ${self.name} WHERE PartId_PART_ID IS NULL;
+
+-- Test: Critical columns are not null
+SELECT COUNT(*) as failures FROM ${self.name} WHERE PartNumber_PART_NO IS NULL OR UnitPrice_UNIT_PRICE IS NULL OR PartQuantity_QUANTITY IS NULL;
+
+-- PROCESSING SUMMARY
+-- CTEs used: NONE
+-- JOINs used: 3 LEFT JOINs connecting TBLWORKORDER, TBLWORKORDERASSET, TBLFLEETASSET, and TBLWORKORDERASSETPARTS.
+-- Filters applied: NONE
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: 5 tests including uniqueness for PrimaryKey and several NOT NULL checks.
+-- Column descriptions source: from rules
+-- Output Mode used: sqlx
