@@ -1,0 +1,123 @@
+config {
+  type: "table",
+  schema: "AeroSrc",
+  name: "flight_health_requirements",
+  description: "Implements flight health requirements by calculating a flight intelligence score, risk status, and repair timelines based on a set of business rules.",
+  tags: ["flight_health", "business_rules", "aero"]
+}
+
+WITH
+  latest_flights AS (
+    SELECT
+      *,
+      ROW_NUMBER() OVER (
+        PARTITION BY
+          AIRCRAFT_ID
+        ORDER BY
+          FLIGHT_TS DESC
+      ) AS rn
+    FROM
+      ${ref("Flight")}
+  ),
+  Telemetry_Extraction AS (
+    SELECT
+      AIRCRAFT_ID,
+      FLIGHT_ID,
+      FLIGHT_TS,
+      ENGINE_TEMP,
+      FATIGUE_INDEX,
+      ENGINE_CYCLES_START,
+      ENGINE_CYCLES_END,
+      COALESCE(
+        CAST(JSON_VALUE(TELEMETRY_JSON, '''$.engine.vibration''') AS FLOAT64),
+        AVG(CAST(JSON_VALUE(TELEMETRY_JSON, '''$.engine.vibration''') AS FLOAT64)) OVER (PARTITION BY AIRCRAFT_ID)
+      ) AS vibration,
+      (
+        CAST(JSON_VALUE(TELEMETRY_JSON, '''$.engine.vibration''') AS FLOAT64) / NULLIF(
+          AVG(CAST(JSON_VALUE(TELEMETRY_JSON, '''$.engine.vibration''') AS FLOAT64)) OVER (
+            PARTITION BY
+              AIRCRAFT_ID
+            ORDER BY
+              FLIGHT_TS ROWS BETWEEN 10 PRECEDING AND 1 PRECEDING
+          ),
+          0
+        )
+      ) AS Vibration_Intensity_Index
+    FROM
+      latest_flights
+    WHERE
+      rn = 1
+  ),
+  Maintenance_Alignment AS (
+    SELECT
+      f.AIRCRAFT_ID,
+      f.FLIGHT_ID,
+      DATE_DIFF(
+        MIN(m.EVENT_START_TS),
+        f.FLIGHT_TS,
+        'DAY'
+      ) AS Days_To_Repair,
+      MIN(m.MAINT_NOTES) as next_maint_notes
+    FROM
+      Telemetry_Extraction AS f
+      LEFT JOIN ${ref("Maintenance")} AS m ON f.AIRCRAFT_ID = m.AIRCRAFT_ID
+      AND m.EVENT_START_TS > f.FLIGHT_TS
+    GROUP BY
+      1,
+      2,
+      f.FLIGHT_TS
+  ),
+  Aggregate_Scoring AS (
+    SELECT
+      t.AIRCRAFT_ID,
+      t.FLIGHT_ID,
+      t.Vibration_Intensity_Index,
+      ma.Days_To_Repair,
+      LEAST(
+        ( (t.ENGINE_TEMP / 1100) * 0.4 + t.FATIGUE_INDEX * 0.3 + (100 - a.AUDIT_SCORE) * 0.3 ) * 100 + CASE
+          WHEN LOWER(ma.next_maint_notes) LIKE '%urgent%'
+          OR LOWER(ma.next_maint_notes) LIKE '%emergency%' THEN 15
+          ELSE 0
+        END,
+        100
+      ) AS FLIGHT_INTELLIGENCE_SCORE,
+      a.SAFETY_FLAG,
+      t.ENGINE_TEMP,
+      t.FATIGUE_INDEX,
+      (t.ENGINE_CYCLES_END - t.ENGINE_CYCLES_START) AS ENGINE_CYCLES
+    FROM
+      Telemetry_Extraction AS t
+      LEFT JOIN Maintenance_Alignment AS ma
+      ON t.FLIGHT_ID = ma.FLIGHT_ID
+      LEFT JOIN ${ref("Audit")} AS a
+      ON t.AIRCRAFT_ID = a.AIRCRAFT_ID
+  ),
+  Conditional_Risk_Classification AS (
+    SELECT
+      *,
+      CASE
+        WHEN SAFETY_FLAG = 'Y' AND ENGINE_TEMP > 980 THEN 'IMMEDIATE_AOG'
+        WHEN FATIGUE_INDEX > 0.8
+        AND FATIGUE_INDEX < 0.9
+        AND ENGINE_CYCLES > 5 THEN 'ACCELERATED_WEAR'
+        WHEN Vibration_Intensity_Index > 1.5 THEN 'SENSOR_ANOMALY'
+        ELSE 'OPERATIONAL_STABLE'
+      END AS Risk_Status
+    FROM
+      Aggregate_Scoring
+  )
+SELECT
+  AIRCRAFT_ID,
+  FLIGHT_ID,
+  FLIGHT_INTELLIGENCE_SCORE,
+  Vibration_Intensity_Index,
+  Days_To_Repair,
+  TRIM(
+    CASE WHEN Risk_Status = 'IMMEDIATE_AOG' THEN 'Rule A Triggered; ' ELSE '' END ||
+    CASE WHEN Risk_Status = 'ACCELERATED_WEAR' THEN 'Rule B Triggered; ' ELSE '' END ||
+    CASE WHEN Risk_Status = 'SENSOR_ANOMALY' THEN 'Rule C Triggered; ' ELSE '' END
+  , '; ') as REASONING_SUMMARY
+FROM
+  Conditional_Risk_Classification
+WHERE
+  FLIGHT_INTELLIGENCE_SCORE > 65
