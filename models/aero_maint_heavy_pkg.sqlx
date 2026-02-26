@@ -1,0 +1,58 @@
+
+config {
+    type: "table",
+    name: "aero_maint_heavy_pkg",
+    schema: "AeroPredict",
+    description: "Processes flight and maintenance data to produce risk scores and operational statuses for aircraft. This model translates a procedural logic into a declarative SQL workflow.",
+    tags: ["maintenance", "risk_analytics", "procedural_rewrite"]
+}
+
+WITH
+  c_complex_extract AS (
+    SELECT
+      f.FLIGHT_ID,
+      f.AIRCRAFT_ID,
+      f.ENGINE_TEMP,
+      f.FATIGUE_INDEX,
+      CAST(JSON_VALUE(f.TELEMETRY_JSON, '$.engine.vibration') AS FLOAT64) AS vib,
+      m.MAINT_EVENT_ID,
+      m.EVENT_START_TS,
+      m.EVENT_END_TS,
+      DATE_DIFF(m.EVENT_END_TS, m.EVENT_START_TS, DAY) as day_delta
+    FROM
+      ${ref("Flight")} AS f
+      JOIN ${ref("Maintenance")} AS m ON f.AIRCRAFT_ID = m.AIRCRAFT_ID
+    WHERE
+      f.FLIGHT_TS > DATE_SUB(CURRENT_DATE(), INTERVAL 365 DAY)
+  ),
+  calculated_metrics AS (
+    SELECT
+      *,
+      (
+        (vib - AVG(vib) OVER (PARTITION BY AIRCRAFT_ID)) / NULLIF(STDDEV(vib) OVER (PARTITION BY AIRCRAFT_ID), 0)
+      ) AS VIB_Z_SCORE,
+      ROUND(
+        (ENGINE_TEMP * 0.4) + (FATIGUE_INDEX * 100 * 0.4) + (vib * 0.2),
+        2
+      ) AS RISK_SCORE
+    FROM
+      c_complex_extract
+  )
+SELECT
+  FLIGHT_ID,
+  AIRCRAFT_ID,
+  MAINT_EVENT_ID,
+  RISK_SCORE,
+  VIB_Z_SCORE,
+  CASE
+    WHEN RISK_SCORE > 80 THEN 'CRITICAL_AOG_REQUIRED'
+    WHEN VIB_Z_SCORE > 2 THEN 'VIBRATION_ANOMALY_DETECTED'
+    ELSE 'STABLE'
+  END AS OP_STATUS,
+  CASE
+    WHEN day_delta < 0 THEN 'ERR_NEG'
+    ELSE 'PASS'
+  END AS INTEGRITY_FLAG,
+  CURRENT_TIMESTAMP() AS LOAD_TS
+FROM
+  calculated_metrics
