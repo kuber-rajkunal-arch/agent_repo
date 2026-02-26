@@ -1,0 +1,54 @@
+
+config { 
+    type: "table",
+    name: "FlightDeepMaintenanceFact",
+    description: "PL/SQL package that inserts data into the FlightDeepMaintenanceFact table.",
+    tags: ["maintenance", "fact"],
+    assertions: {
+        uniqueKey: ["FLIGHT_ID", "MAINT_EVENT_ID"]
+    }
+}
+
+WITH 
+stats AS (
+    SELECT 
+        f.FLIGHT_ID,
+        f.AIRCRAFT_ID,
+        f.ENGINE_TEMP,
+        f.FATIGUE_INDEX,
+        CAST(JSON_VALUE(f.TELEMETRY_JSON, '$.engine.vibration') AS FLOAT64) as vib,
+        m.MAINT_EVENT_ID,
+        m.EVENT_START_TS,
+        m.EVENT_END_TS
+    FROM ${ref("Flight")} f
+    JOIN ${ref("Maintenance")} m ON f.AIRCRAFT_ID = m.AIRCRAFT_ID
+    WHERE f.FLIGHT_TS > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 365 DAY)
+),
+calculated_metrics AS (
+    SELECT
+        *,
+        -- Risk score derived from calculate_safety_index function logic
+        (ENGINE_TEMP * 0.5) + (FATIGUE_INDEX * 0.3) + (vib * 0.2) AS RISK_SCORE,
+        -- Z-score calculation for vibration
+        (vib - AVG(vib) OVER (PARTITION BY AIRCRAFT_ID)) / NULLIF(STDDEV(vib) OVER (PARTITION BY AIRCRAFT_ID), 0) AS VIB_Z_SCORE,
+        DATE_DIFF(EVENT_END_TS, EVENT_START_TS, DAY) as day_delta
+    FROM stats
+)
+
+SELECT 
+    FLIGHT_ID,
+    AIRCRAFT_ID,
+    MAINT_EVENT_ID,
+    RISK_SCORE,
+    VIB_Z_SCORE,
+    CASE 
+        WHEN RISK_SCORE > 80 THEN 'CRITICAL_AOG_REQUIRED'
+        WHEN VIB_Z_SCORE > 2 THEN 'VIBRATION_ANOMALY_DETECTED'
+        ELSE 'STABLE'
+    END AS OP_STATUS,
+    CASE 
+        WHEN day_delta < 0 THEN 'ERR_NEG'
+        ELSE 'PASS'
+    END AS INTEGRITY_FLAG,
+    CURRENT_TIMESTAMP() as LOAD_TS
+FROM calculated_metrics
