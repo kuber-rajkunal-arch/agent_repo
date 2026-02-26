@@ -1,0 +1,108 @@
+
+config {
+    type: "table",
+    name: "mdl_flight_health_assessment",
+    schema: "AeroAnalytics",
+    description: "Translates complex business requirements for flight health into a structured analytical model. It calculates a flight intelligence score, assesses risk, and provides a reasoning summary based on telemetry, maintenance, and audit data.",
+    tags: ["flight_health", "risk_scoring", "requirements_rewrite"]
+}
+
+WITH
+  flight_base AS (
+    SELECT
+      *,
+      (ENGINE_CYCLES_END - ENGINE_CYCLES_START) AS engine_cycles,
+      CAST(JSON_VALUE(TELEMETRY_JSON, '$.engine.vibration') AS FLOAT64) AS vibration_raw,
+      CAST(JSON_VALUE(TELEMETRY_JSON, '$.fuel.pressure') AS FLOAT64) AS pressure_raw
+    FROM
+      ${ref("Flight")}
+  ),
+  historical_averages AS (
+    SELECT
+      AIRCRAFT_ID,
+      AVG(vibration_raw) AS avg_vibration
+    FROM
+      flight_base
+    WHERE vibration_raw IS NOT NULL
+    GROUP BY
+      AIRCRAFT_ID
+  ),
+  flight_sanitized AS (
+    SELECT
+      fb.*,
+      COALESCE(fb.vibration_raw, ha.avg_vibration) AS vibration_sanitized
+    FROM
+      flight_base fb
+      LEFT JOIN historical_averages ha ON fb.AIRCRAFT_ID = ha.AIRCRAFT_ID
+  ),
+  flight_enriched AS (
+    SELECT
+      *,
+      (vibration_sanitized / NULLIF(AVG(vibration_sanitized) OVER (PARTITION BY AIRCRAFT_ID ORDER BY FLIGHT_TS ROWS BETWEEN 9 PRECEDING AND CURRENT ROW), 0)) AS vibration_intensity_index
+    FROM flight_sanitized
+  ),
+  maintenance_lookforward AS (
+    SELECT
+      AIRCRAFT_ID,
+      EVENT_START_TS,
+      LEAD(EVENT_START_TS, 1) OVER (PARTITION BY AIRCRAFT_ID ORDER BY EVENT_START_TS) as next_event_start_ts,
+      LEAD(MAINT_NOTES, 1) OVER (PARTITION BY AIRCRAFT_ID ORDER BY EVENT_START_TS) as next_maint_notes
+    FROM ${ref("Maintenance")}
+  ),
+
+  combined_data AS (
+    SELECT
+        f.*,
+        aud.SAFETY_FLAG,
+        aud.AUDIT_SCORE,
+        ml.next_event_start_ts,
+        ml.next_maint_notes
+    FROM flight_enriched f
+    LEFT JOIN ${ref("Audit")} aud ON f.AIRCRAFT_ID = aud.AIRCRAFT_ID
+    LEFT JOIN maintenance_lookforward ml ON f.AIRCRAFT_ID = ml.AIRCRAFT_ID AND f.FLIGHT_TS < ml.EVENT_START_TS
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY f.FLIGHT_ID ORDER BY ml.EVENT_START_TS ASC) = 1
+  ),
+
+  calculated_fields AS (
+      SELECT
+        *,
+        -- Requirement: Conditional Risk Classification
+        CASE
+            WHEN SAFETY_FLAG = 'Y' AND ENGINE_TEMP > 980 THEN 'IMMEDIATE_AOG'
+            WHEN FATIGUE_INDEX > 0.8 AND FATIGUE_INDEX < 0.9 AND engine_cycles > 5 THEN 'ACCELERATED_WEAR'
+            WHEN vibration_intensity_index > 1.5 THEN 'SENSOR_ANOMALY'
+            ELSE 'OPERATIONAL_STABLE'
+        END AS risk_classification,
+
+        -- Requirement: Maintenance Alignment
+        DATE_DIFF(next_event_start_ts, FLIGHT_TS, DAY) AS days_to_repair,
+
+        -- Requirement: Aggregate Scoring
+        (ENGINE_TEMP / 1100 * 40) + (FATIGUE_INDEX * 100 * 0.30) + ((100 - AUDIT_SCORE) * 0.30) AS base_score,
+        CASE WHEN LOWER(next_maint_notes) LIKE '%urgent%' OR LOWER(next_maint_notes) LIKE '%emergency%' THEN 15 ELSE 0 END AS bonus_points
+
+      FROM combined_data
+  ),
+
+  final_score AS (
+      SELECT
+        *,
+        LEAST(100, base_score + bonus_points) AS flight_intelligence_score
+      FROM calculated_fields
+  )
+
+SELECT
+    FLIGHT_ID,
+    AIRCRAFT_ID,
+    FLIGHT_TS,
+    risk_classification,
+    flight_intelligence_score,
+    CASE WHEN days_to_repair < 0 THEN 'LOGGING_ERROR' ELSE CAST(days_to_repair AS STRING) END AS maintenance_status,
+    CONCAT(
+        CASE WHEN risk_classification = 'IMMEDIATE_AOG' THEN 'A;' ELSE '' END,
+        CASE WHEN risk_classification = 'ACCELERATED_WEAR' THEN 'B;' ELSE '' END,
+        CASE WHEN risk_classification = 'SENSOR_ANOMALY' THEN 'C;' ELSE '' END
+    ) AS reasoning_summary
+FROM final_score
+WHERE flight_intelligence_score > 65
+QUALIFY ROW_NUMBER() OVER (PARTITION BY AIRCRAFT_ID ORDER BY FLIGHT_TS DESC) = 1
