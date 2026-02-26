@@ -1,0 +1,25 @@
+-- UNIT TESTS
+-- Test: FLIGHT_ID should not be null
+SELECT COUNT(*) AS failures FROM ${self()} WHERE FLIGHT_ID IS NULL;
+
+-- Test: MAINT_EVENT_ID should not be null
+SELECT COUNT(*) AS failures FROM ${self()} WHERE MAINT_EVENT_ID IS NULL;
+
+-- Test: RISK_SCORE should always be a positive value
+SELECT COUNT(*) AS failures FROM ${self()} WHERE RISK_SCORE < 0;
+
+-- Test: OP_STATUS must be one of the valid states
+SELECT COUNT(*) AS failures FROM ${self()} WHERE OP_STATUS NOT IN ('CRITICAL_AOG_REQUIRED', 'VIBRATION_ANOMALY_DETECTED', 'STABLE');
+
+-- Test: INTEGRITY_FLAG should not indicate a negative day delta
+SELECT COUNT(*) AS failures FROM ${self()} WHERE INTEGRITY_FLAG = 'ERR_NEG';
+
+-- PROCESSING SUMMARY
+-- CTEs used: stats, calculated_metrics
+-- JOINs used: JOIN on AIRCRAFT_ID
+-- Filters applied: FLIGHT_TS within the last 365 days
+-- Incremental logic: present
+-- pre_operations emitted: no
+-- Unit tests emitted: 5 tests for NOT NULL, range, domain, and integrity
+-- Column descriptions source: synthesized
+-- Output Mode used: sqlx
