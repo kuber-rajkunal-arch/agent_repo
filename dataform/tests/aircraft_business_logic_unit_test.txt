@@ -1,0 +1,21 @@
+-- UNIT TESTS
+-- Test: Ensure the composite key is unique
+SELECT COUNT(*) AS failures FROM (SELECT FLIGHT_ID, MAINT_EVENT_ID, COUNT(*) FROM ${self.name} GROUP BY FLIGHT_ID, MAINT_EVENT_ID HAVING COUNT(*) > 1)
+-- Test: AIRCRAFT_ID should not be null
+SELECT COUNT(*) AS failures FROM ${self.name} WHERE AIRCRAFT_ID IS NULL
+-- Test: OP_STATUS must be one of the predefined values
+SELECT COUNT(*) AS failures FROM ${self.name} WHERE OP_STATUS NOT IN ('CRITICAL_AOG_REQUIRED', 'VIBRATION_ANOMALY_DETECTED', 'STABLE')
+-- Test: INTEGRITY_FLAG should not be 'ERR_NEG'
+SELECT COUNT(*) AS failures FROM ${self.name} WHERE INTEGRITY_FLAG = 'ERR_NEG'
+-- Test: Risk score should be a positive value
+SELECT COUNT(*) AS failures FROM ${self.name} WHERE RISK_SCORE < 0
+
+-- PROCESSING SUMMARY
+-- CTEs used: stats, derived_metrics
+-- JOINs used: JOIN on AIRCRAFT_ID
+-- Filters applied: Flight records from the last 365 days
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: 5 tests (uniqueness, not null, domain, data validation)
+-- Column descriptions source: synthesized
+-- Output Mode used: sqlx
