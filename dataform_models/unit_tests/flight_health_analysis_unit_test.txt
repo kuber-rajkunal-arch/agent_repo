@@ -1,0 +1,21 @@
+-- UNIT TESTS
+-- Test for null aircraft IDs
+SELECT COUNT(*) AS failures FROM ${self()} WHERE AIRCRAFT_ID IS NULL;
+-- Test for flight intelligence scores outside the 0-100 range
+SELECT COUNT(*) AS failures FROM ${self()} WHERE FLIGHT_INTELLIGENCE_SCORE < 0 OR FLIGHT_INTELLIGENCE_SCORE > 100;
+-- Test for records with logging errors
+SELECT COUNT(*) AS failures FROM ${self()} WHERE Days_To_Repair < 0;
+-- Test for invalid risk classification values
+SELECT COUNT(*) AS failures FROM ${self()} WHERE Risk_Classification NOT IN ('IMMEDIATE_AOG', 'ACCELERATED_WEAR', 'SENSOR_ANOMALY', 'OPERATIONAL_STABLE');
+-- Test reasoning summary is populated when classification is not stable
+SELECT COUNT(*) AS failures FROM ${self()} WHERE Risk_Classification != 'OPERATIONAL_STABLE' AND (REASONING_SUMMARY IS NULL OR REASONING_SUMMARY = '');
+
+-- PROCESSING SUMMARY
+-- CTEs used: flight_vibration_cte, next_maintenance_cte, joined_data, calculated_fields, classified_flights, reasoning
+-- JOINs used: LEFT JOINs to connect flight, audit, and maintenance data.
+-- Filters applied: FLIGHT_INTELLIGENCE_SCORE > 65 and QUALIFY for the latest flight record per aircraft.
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: not-null, range checks, data integrity, and domain validation.
+-- Column descriptions source: from rules
+-- Output Mode used: sqlx
