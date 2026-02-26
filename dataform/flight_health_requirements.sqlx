@@ -1,0 +1,81 @@
+
+config { 
+    type: "table",
+    name: "flight_health_requirements",
+    description: "Multi-Stage Aviation Data Enrichment & Risk Normalization based on functional requirements.",
+    tags: ["flight_health", "requirements"]
+}
+
+WITH 
+flights_with_vibration AS (
+    SELECT
+        AIRCRAFT_ID,
+        FLIGHT_TS,
+        ENGINE_TEMP,
+        FATIGUE_INDEX,
+        ENGINE_CYCLES,
+        TELEMETRY_JSON,
+        CAST(JSON_VALUE(TELEMETRY_JSON, '$.engine.vibration') AS FLOAT64) as vibration,
+        AVG(CAST(JSON_VALUE(TELEMETRY_JSON, '$.engine.vibration') AS FLOAT64)) OVER (PARTITION BY AIRCRAFT_ID ORDER BY FLIGHT_TS ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) as avg_vibration_last_10
+    FROM ${ref("Flight")}
+),
+latest_flight AS (
+    SELECT * FROM flights_with_vibration
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY AIRCRAFT_ID ORDER BY FLIGHT_TS DESC) = 1
+),
+next_maintenance AS (
+    SELECT 
+        AIRCRAFT_ID,
+        FLIGHT_TS,
+        LEAD(EVENT_START_TS) OVER (PARTITION BY AIRCRAFT_ID ORDER BY FLIGHT_TS) as next_maint_ts
+    FROM (
+        SELECT AIRCRAFT_ID, FLIGHT_TS, NULL as EVENT_START_TS FROM ${ref("Flight")}
+        UNION ALL
+        SELECT AIRCRAFT_ID, NULL, EVENT_START_TS FROM ${ref("Maintenance")}
+    ) 
+),
+combined_sources AS (
+    SELECT 
+        f.*,
+        nm.next_maint_ts,
+        aud.SAFETY_FLAG,
+        aud.AUDIT_SCORE,
+        m.MAINT_NOTES
+    FROM latest_flight f
+    LEFT JOIN next_maintenance nm ON f.AIRCRAFT_ID = nm.AIRCRAFT_ID AND f.FLIGHT_TS = nm.FLIGHT_TS
+    LEFT JOIN ${ref("Audit")} aud ON f.AIRCRAFT_ID = aud.AIRCRAFT_ID
+    LEFT JOIN ${ref("Maintenance")} m ON f.AIRCRAFT_ID = m.AIRCRAFT_ID -- This join is for MAINT_NOTES, might need refinement based on desired logic
+),
+calculated_metrics AS (
+    SELECT
+        *,
+        vibration / NULLIF(avg_vibration_last_10, 0) as vibration_intensity_index,
+        DATE_DIFF(next_maint_ts, FLIGHT_TS, DAY) as days_to_repair,
+        -- Risk Classification Rules
+        (SAFETY_FLAG = 'Y' AND ENGINE_TEMP > 980) as is_rule_a_triggered,
+        (FATIGUE_INDEX > 0.8 AND FATIGUE_INDEX < 0.9 AND ENGINE_CYCLES > 5) as is_rule_b_triggered,
+        (vibration / NULLIF(avg_vibration_last_10, 0) > 1.5) as is_rule_c_triggered
+    FROM combined_sources
+),
+final_scoring AS (
+    SELECT 
+        *,
+        ((0.4 * (ENGINE_TEMP / 1100)) + (0.3 * FATIGUE_INDEX) + (0.3 * (100 - AUDIT_SCORE)) 
+         + CASE WHEN LOWER(MAINT_NOTES) LIKE '%urgent%' OR LOWER(MAINT_NOTES) LIKE '%emergency%' THEN 15 ELSE 0 END) as flight_intelligence_score
+    FROM calculated_metrics
+)
+
+SELECT 
+    AIRCRAFT_ID,
+    FLIGHT_TS,
+    days_to_repair,
+    flight_intelligence_score,
+    vibration_intensity_index,
+    CONCAT(
+        CASE WHEN is_rule_a_triggered THEN 'Rule_A_Grounding; ' ELSE '' END,
+        CASE WHEN is_rule_b_triggered THEN 'Rule_B_Structural; ' ELSE '' END,
+        CASE WHEN is_rule_c_triggered THEN 'Rule_C_Sensor_Anomaly; ' ELSE '' END
+    ) as REASONING_SUMMARY,
+    CASE WHEN days_to_repair < 0 THEN 'LOGGING_ERROR' ELSE 'VALID' END as repair_log_status
+FROM final_scoring
+WHERE flight_intelligence_score > 65
