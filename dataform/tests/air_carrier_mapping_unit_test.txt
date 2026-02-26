@@ -1,0 +1,21 @@
+-- UNIT TESTS
+-- Test: Ensure flight IDs are unique
+SELECT COUNT(*) AS failures FROM (SELECT FLIGHT_ID, COUNT(*) FROM ${self.name} GROUP BY FLIGHT_ID HAVING COUNT(*) > 1)
+-- Test: Critical identifier AIRCRAFT_ID should not be null
+SELECT COUNT(*) AS failures FROM ${self.name} WHERE AIRCRAFT_ID IS NULL
+-- Test: AGGREGATE_HEALTH_RISK_SCORE should be within a valid range (0-100)
+SELECT COUNT(*) AS failures FROM ${self.name} WHERE AGGREGATE_HEALTH_RISK_SCORE < 0 OR AGGREGATE_HEALTH_RISK_SCORE > 100
+-- Test: OPERATIONAL_STATUS must be one of the predefined values
+SELECT COUNT(*) AS failures FROM ${self.name} WHERE OPERATIONAL_STATUS NOT IN ('IMMEDIATE_GROUNDING', 'MONITOR_TREND', 'OPERATIONAL')
+-- Test: days_since_last_replacement should not be a negative value
+SELECT COUNT(*) AS failures FROM ${self.name} WHERE days_since_last_replacement < 0
+
+-- PROCESSING SUMMARY
+-- CTEs used: flight_metrics, health_trends, maintenance_window, transformed_unified, final_intelligence
+-- JOINs used: LEFT JOIN on AIRCRAFT_ID and a timestamp range
+-- Filters applied: NONE in WHERE clause, but conditional logic in CASE statements
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: 5 tests (uniqueness, not null, range, domain, data validation)
+-- Column descriptions source: synthesized
+-- Output Mode used: sqlx
