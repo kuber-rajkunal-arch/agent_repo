@@ -1,0 +1,23 @@
+-- UNIT TESTS
+
+-- Test: flight_intelligence_score must be between 0 and 100
+SELECT COUNT(*) AS failures FROM ${self()} WHERE flight_intelligence_score < 0 OR flight_intelligence_score > 100;
+
+-- Test: risk_classification must be one of the specified values
+SELECT COUNT(*) AS failures FROM ${self()} WHERE risk_classification NOT IN ('IMMEDIATE_AOG', 'ACCELERATED_WEAR', 'SENSOR_ANOMALY', 'OPERATIONAL_STABLE');
+
+-- Test: FLIGHT_ID must be unique in the final output
+SELECT COUNT(*) AS failures FROM (SELECT FLIGHT_ID, COUNT(*) AS n FROM ${self()} GROUP BY FLIGHT_ID HAVING n > 1);
+
+-- Test: flight_intelligence_score should only contain values > 65 as per final filter
+SELECT COUNT(*) AS failures FROM ${self()} WHERE flight_intelligence_score <= 65;
+
+-- PROCESSING SUMMARY
+-- CTEs used: flight_base, historical_averages, flight_sanitized, flight_enriched, maintenance_lookforward, combined_data, calculated_fields, final_score
+-- JOINs used: 3 LEFT JOINs to combine flight, historical, audit, and maintenance data.
+-- Filters applied: Final model filters for intelligence score > 65 and takes only the latest flight per aircraft.
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: 4 tests for score range, domain validation, uniqueness, and filter logic.
+-- Column descriptions source: from rules
+-- Output Mode used: sqlx
