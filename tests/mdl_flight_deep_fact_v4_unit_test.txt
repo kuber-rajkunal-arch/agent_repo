@@ -1,0 +1,26 @@
+-- UNIT TESTS
+
+-- Test: FLIGHT_ID must be unique
+SELECT COUNT(*) AS failures FROM (SELECT FLIGHT_ID, COUNT(*) AS n FROM ${self()} GROUP BY FLIGHT_ID HAVING n > 1);
+
+-- Test: AIRCRAFT_ID must not be null
+SELECT COUNT(*) AS failures FROM ${self()} WHERE AIRCRAFT_ID IS NULL;
+
+-- Test: AGGREGATE_HEALTH_RISK_SCORE should not be negative
+SELECT COUNT(*) AS failures FROM ${self()} WHERE AGGREGATE_HEALTH_RISK_SCORE < 0;
+
+-- Test: OPERATIONAL_STATUS must be one of the valid, defined values
+SELECT COUNT(*) AS failures FROM ${self()} WHERE OPERATIONAL_STATUS NOT IN ('IMMEDIATE_GROUNDING', 'MONITOR_TREND', 'OPERATIONAL');
+
+-- Test: TRIGGERED_MAINTENANCE must be 0 or 1
+SELECT COUNT(*) AS failures FROM ${self()} WHERE TRIGGERED_MAINTENANCE NOT IN (0, 1);
+
+-- PROCESSING SUMMARY
+-- CTEs used: flight_metrics, health_trends, maintenance_window, transformed_unified, final_intelligence
+-- JOINs used: 2 LEFT JOINs connecting flight, maintenance, and audit data.
+-- Filters applied: Join conditions include a temporal BETWEEN clause.
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: 5 tests including uniqueness, not-null, range, and domain checks.
+-- Column descriptions source: from rules
+-- Output Mode used: sqlx
