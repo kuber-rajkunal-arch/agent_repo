@@ -1,0 +1,23 @@
+-- UNIT TESTS
+
+-- Test: RISK_SCORE must be a non-negative value
+SELECT COUNT(*) AS failures FROM ${self()} WHERE RISK_SCORE < 0;
+
+-- Test: OP_STATUS must be one of the valid, defined values
+SELECT COUNT(*) AS failures FROM ${self()} WHERE OP_STATUS NOT IN ('CRITICAL_AOG_REQUIRED', 'VIBRATION_ANOMALY_DETECTED', 'STABLE');
+
+-- Test: INTEGRITY_FLAG must be either 'PASS' or 'ERR_NEG'
+SELECT COUNT(*) AS failures FROM ${self()} WHERE INTEGRITY_FLAG NOT IN ('PASS', 'ERR_NEG');
+
+-- Test: FLIGHT_ID should not be null
+SELECT COUNT(*) AS failures FROM ${self()} WHERE FLIGHT_ID IS NULL;
+
+-- PROCESSING SUMMARY
+-- CTEs used: c_complex_extract, calculated_metrics
+-- JOINs used: 1 JOIN between Flight and Maintenance data.
+-- Filters applied: Flights are filtered to the last 365 days.
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: 4 tests for data integrity, domain, and nullability.
+-- Column descriptions source: from rules
+-- Output Mode used: sqlx
