@@ -1,0 +1,19 @@
+-- UNIT TESTS
+-- Test: FLIGHT_INTELLIGENCE_SCORE should be between 0 and 100
+SELECT COUNT(*) AS failures FROM ${self.name} WHERE FLIGHT_INTELLIGENCE_SCORE < 0 OR FLIGHT_INTELLIGENCE_SCORE > 100
+-- Test: Ensure Days_To_Repair is not negative, which would indicate a logging error
+SELECT COUNT(*) AS failures FROM ${self.name} WHERE Days_To_Repair < 0
+-- Test: REASONING_SUMMARY should not be empty for the filtered results
+SELECT COUNT(*) AS failures FROM ${self.name} WHERE REASONING_SUMMARY = '' OR REASONING_SUMMARY IS NULL
+-- Test: AIRCRAFT_ID should not be NULL
+SELECT COUNT(*) AS failures FROM ${self.name} WHERE AIRCRAFT_ID IS NULL
+
+-- PROCESSING SUMMARY
+-- CTEs used: latest_flights, Telemetry_Extraction, Maintenance_Alignment, Aggregate_Scoring, Conditional_Risk_Classification
+-- JOINs used: LEFT JOIN to bring in maintenance and audit data
+-- Filters applied: Only includes flights with a FLIGHT_INTELLIGENCE_SCORE > 65
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: 4 tests (range, data validation, not null)
+-- Column descriptions source: from rules
+-- Output Mode used: sqlx
