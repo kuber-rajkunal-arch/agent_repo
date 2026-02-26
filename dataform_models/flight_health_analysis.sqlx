@@ -1,0 +1,152 @@
+config {
+  type: "table",
+  name: "flight_health_analysis",
+  schema: "AeroSrc",
+  description: "Provides a detailed analysis of flight health including risk scores and operational status based on maintenance and audit data.",
+  tags: ["flight_health", "risk_analysis"]
+}
+
+WITH
+  flight_vibration_cte AS (
+    SELECT
+      FLIGHT_ID,
+      AIRCRAFT_ID,
+      FLIGHT_TS,
+      CAST(
+        JSON_VALUE(TELEMETRY_JSON, '''$.engine.vibration''') AS FLOAT64
+      ) AS current_vibration,
+      AVG(
+        CAST(
+          JSON_VALUE(TELEMETRY_JSON, '''$.engine.vibration''') AS FLOAT64
+        )
+      ) OVER (
+        PARTITION BY
+          AIRCRAFT_ID
+        ORDER BY
+          FLIGHT_TS ROWS BETWEEN 10 PRECEDING AND 1 PRECEDING
+      ) AS avg_vibration_last_10
+    FROM
+      ${ref("Flight")}
+  ),
+  next_maintenance_cte AS (
+    SELECT
+      AIRCRAFT_ID,
+      FLIGHT_TS,
+      LEAD(EVENT_START_TS, 1) OVER (
+        PARTITION BY
+          AIRCRAFT_ID
+        ORDER BY
+          EVENT_START_TS
+      ) AS next_maint_ts,
+      LEAD(maint_notes, 1) OVER (
+        PARTITION BY
+          AIRCRAFT_ID
+        ORDER BY
+          EVENT_START_TS
+      ) AS next_maint_notes
+    FROM
+      ${ref("Maintenance")}
+  ),
+  joined_data AS (
+    SELECT
+      f.FLIGHT_ID,
+      f.AIRCRAFT_ID,
+      f.FLIGHT_TS,
+      f.ENGINE_TEMP,
+      f.FATIGUE_INDEX,
+      f.ENGINE_CYCLES,
+      fv.current_vibration,
+      COALESCE(
+        fv.avg_vibration_last_10,
+        fv.current_vibration
+      ) AS avg_vibration_last_10,
+      nm.next_maint_ts,
+      nm.next_maint_notes,
+      a.SAFETY_FLAG,
+      a.AUDIT_SCORE
+    FROM
+      ${ref("Flight")} AS f
+      LEFT JOIN flight_vibration_cte AS fv ON f.FLIGHT_ID = fv.FLIGHT_ID
+      LEFT JOIN ${ref("Audit")} AS a ON f.AIRCRAFT_ID = a.AIRCRAFT_ID
+      LEFT JOIN next_maintenance_cte AS nm ON f.AIRCRAFT_ID = nm.AIRCRAFT_ID AND f.FLIGHT_TS < nm.next_maint_ts
+  ),
+  calculated_fields AS (
+    SELECT
+      *,
+      current_vibration / NULLIF(avg_vibration_last_10, 0) AS Vibration_Intensity_Index,
+      DATE_DIFF(CAST(next_maint_ts AS DATE), CAST(FLIGHT_TS AS DATE), DAY) AS Days_To_Repair,
+      LEAST(
+        100,
+        (
+          (ENGINE_TEMP / 1100) * 40
+        ) + (FATIGUE_INDEX * 30) + (
+          (100 - AUDIT_SCORE) * 30
+        ) + (
+          CASE
+            WHEN LOWER(next_maint_notes) LIKE '%urgent%'
+            OR LOWER(next_maint_notes) LIKE '%emergency%' THEN 15
+            ELSE 0
+          END
+        )
+      ) AS FLIGHT_INTELLIGENCE_SCORE
+    FROM
+      joined_data
+  ),
+  classified_flights AS (
+    SELECT
+      *,
+      CASE
+        WHEN SAFETY_FLAG = 'Y' AND ENGINE_TEMP > 980 THEN 'IMMEDIATE_AOG'
+        WHEN FATIGUE_INDEX > 0.8
+        AND FATIGUE_INDEX < 0.9
+        AND ENGINE_CYCLES > 5 THEN 'ACCELERATED_WEAR'
+        WHEN Vibration_Intensity_Index > 1.5 THEN 'SENSOR_ANOMALY'
+        ELSE 'OPERATIONAL_STABLE'
+      END AS Risk_Classification,
+      CASE
+        WHEN Days_To_Repair < 0 THEN 'LOGGING_ERROR'
+        ELSE NULL
+      END AS data_integrity_flag
+    FROM
+      calculated_fields
+  ),
+  reasoning AS (
+    SELECT
+      *,
+      TRIM(
+        CONCAT(
+          CASE
+            WHEN Risk_Classification = 'IMMEDIATE_AOG' THEN 'Rule A triggered; '
+            ELSE ''
+          END,
+          CASE
+            WHEN Risk_Classification = 'ACCELERATED_WEAR' THEN 'Rule B triggered; '
+            ELSE ''
+          END,
+          CASE
+            WHEN Risk_Classification = 'SENSOR_ANOMALY' THEN 'Rule C triggered; '
+            ELSE ''
+          END
+        ),
+        '; '
+      ) AS REASONING_SUMMARY
+    FROM
+      classified_flights
+  )
+SELECT
+  Vibration_Intensity_Index,
+  Risk_Classification,
+  Days_To_Repair,
+  FLIGHT_INTELLIGENCE_SCORE,
+  REASONING_SUMMARY
+FROM
+  reasoning
+WHERE
+  FLIGHT_INTELLIGENCE_SCORE > 65
+QUALIFY
+  ROW_NUMBER() OVER (
+    PARTITION BY
+      AIRCRAFT_ID
+    ORDER BY
+      FLIGHT_TS DESC
+  ) = 1
