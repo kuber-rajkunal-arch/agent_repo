@@ -1,0 +1,143 @@
+config {
+  type: "table",
+  schema: "AeroSrc",
+  name: "flight_health_requirements",
+  description: "Generates a flight intelligence score and operational status for aircraft based on telemetry, audit, and maintenance data. This model identifies at-risk aircraft and provides a reasoning summary.",
+  tags: ["flight_health", "analytics"]
+}
+
+WITH
+  flight_data AS (
+    SELECT
+      AIRCRAFT_ID,
+      FLIGHT_TS,
+      ENGINE_TEMP,
+      FATIGUE_INDEX,
+      ENGINE_CYCLES,
+      SAFE_CAST(JSON_VALUE(TELEMETRY_JSON, '$.engine.vibration') AS FLOAT64) AS vibration_value
+    FROM
+      ${ref("Flight")}
+  ),
+  maintenance_data AS (
+    SELECT
+      AIRCRAFT_ID,
+      EVENT_START_TS,
+      MAINT_NOTES
+    FROM
+      ${ref("Maintenance")}
+  ),
+  audit_data AS (
+    SELECT
+      AIRCRAFT_ID,
+      SAFETY_FLAG,
+      AUDIT_SCORE
+    FROM
+      ${ref("Audit")}
+  ),
+  enriched_flights AS (
+    SELECT
+      f.AIRCRAFT_ID,
+      f.FLIGHT_TS,
+      f.ENGINE_TEMP,
+      f.FATIGUE_INDEX,
+      f.ENGINE_CYCLES,
+      f.vibration_value,
+      a.SAFETY_FLAG,
+      a.AUDIT_SCORE,
+      m.MAINT_NOTES,
+      AVG(f.vibration_value) OVER (
+        PARTITION BY
+          f.AIRCRAFT_ID
+        ORDER BY
+          f.FLIGHT_TS ROWS BETWEEN 9 PRECEDING
+          AND CURRENT ROW
+      ) AS avg_vibration_last_10,
+      LEAD(m.EVENT_START_TS, 1) OVER (
+        PARTITION BY
+          f.AIRCRAFT_ID
+        ORDER BY
+          f.FLIGHT_TS
+      ) AS next_maint_event_ts
+    FROM
+      flight_data AS f
+      LEFT JOIN audit_data AS a ON f.AIRCRAFT_ID = a.AIRCRAFT_ID
+      LEFT JOIN maintenance_data AS m ON f.AIRCRAFT_ID = m.AIRCRAFT_ID
+      AND f.FLIGHT_TS < m.EVENT_START_TS
+  ),
+  calculated_metrics AS (
+    SELECT
+      *,
+      (
+        vibration_value / NULLIF(avg_vibration_last_10, 0)
+      ) AS vibration_intensity_index,
+      DATE_DIFF(
+        next_maint_event_ts, FLIGHT_TS, DAY
+      ) AS days_to_repair,
+      CASE
+        WHEN LOWER(MAINT_NOTES) LIKE '%urgent%'
+        OR LOWER(MAINT_NOTES) LIKE '%emergency%' THEN 15
+        ELSE 0
+      END AS maint_bonus_points
+    FROM
+      enriched_flights
+  ),
+  final_scoring AS (
+    SELECT
+      AIRCRAFT_ID,
+      FLIGHT_TS,
+      vibration_intensity_index,
+      days_to_repair,
+      LEAST(
+        CAST(
+          (
+            0.4 * (
+              ENGINE_TEMP / 1100
+            )
+          ) + (
+            0.3 * FATIGUE_INDEX
+          ) + (
+            0.3 * (
+              100 - COALESCE(AUDIT_SCORE, 0)
+            )
+          ) + maint_bonus_points AS NUMERIC
+        ),
+        100
+      ) AS flight_intelligence_score,
+      TRIM(
+        CONCAT(
+          CASE
+            WHEN SAFETY_FLAG = 'Y' AND ENGINE_TEMP > 980 THEN 'A'
+            ELSE ''
+          END,
+          CASE
+            WHEN FATIGUE_INDEX > 0.8
+            AND FATIGUE_INDEX < 0.9
+            AND ENGINE_CYCLES > 5 THEN 'B'
+            ELSE ''
+          END,
+          CASE
+            WHEN vibration_intensity_index > 1.5 THEN 'C'
+            ELSE ''
+          END
+        )
+      ) AS reasoning_summary,
+      ROW_NUMBER() OVER (
+        PARTITION BY
+          AIRCRAFT_ID
+        ORDER BY
+          FLIGHT_TS DESC
+      ) as rn
+    FROM
+      calculated_metrics
+  )
+SELECT
+  vibration_intensity_index,
+  days_to_repair,
+  flight_intelligence_score,
+  reasoning_summary
+FROM
+  final_scoring
+WHERE
+  flight_intelligence_score > 65
+QUALIFY
+  rn = 1
