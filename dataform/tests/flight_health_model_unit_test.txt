@@ -1,0 +1,54 @@
+-- UNIT TESTS
+-- Test for non-null flight intelligence score
+SELECT
+  COUNT(*) AS failures
+FROM
+  ${self()}
+WHERE
+  flight_intelligence_score IS NULL;
+-- Test for uniqueness of aircraft in the final output
+SELECT
+  COUNT(*) AS failures
+FROM
+  (
+    SELECT
+      AIRCRAFT_ID,
+      COUNT(*)
+    FROM
+      ${self()}
+    GROUP BY
+      AIRCRAFT_ID
+    HAVING
+      COUNT(*) > 1
+  );
+-- Test for flight_intelligence_score to be within the 0-100 range
+SELECT
+  COUNT(*) AS failures
+FROM
+  ${self()}
+WHERE
+  flight_intelligence_score < 0
+  OR flight_intelligence_score > 100;
+-- Test for negative days_to_repair, which indicates a data logging issue
+SELECT
+  COUNT(*) AS failures
+FROM
+  ${self()}
+WHERE
+  days_to_repair < 0;
+-- Test that reasoning summary is not empty, as a high score implies a reason
+SELECT
+  COUNT(*) AS failures
+FROM
+  ${self()}
+WHERE
+  reasoning_summary = '';
+-- PROCESSING SUMMARY
+-- CTEs used: flight_data, maintenance_data, audit_data, enriched_flights, calculated_metrics, final_scoring
+-- JOINs used: LEFT JOIN on AIRCRAFT_ID between flight, audit, and future maintenance data.
+-- Filters applied: WHERE flight_intelligence_score > 65, QUALIFY for latest flight record per aircraft.
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: 5 tests: non-null score, aircraft uniqueness, score range, negative days_to_repair, non-empty reasoning.
+-- Column descriptions source: from rules
+-- Output Mode used: sqlx
