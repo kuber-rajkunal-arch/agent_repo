@@ -1,0 +1,21 @@
+-- UNIT TESTS
+-- Test for null flight IDs
+SELECT COUNT(*) AS failures FROM ${self()} WHERE FLIGHT_ID IS NULL;
+-- Test for null aircraft IDs
+SELECT COUNT(*) AS failures FROM ${self()} WHERE AIRCRAFT_ID IS NULL;
+-- Test for negative risk scores
+SELECT COUNT(*) AS failures FROM ${self()} WHERE RISK_SCORE < 0;
+-- Test for invalid integrity flags
+SELECT COUNT(*) AS failures FROM ${self()} WHERE INTEGRITY_FLAG NOT IN ('PASS', 'ERR_NEG');
+-- Test for Z-scores on aircraft with no vibration deviation
+SELECT COUNT(*) AS failures FROM ${self()} WHERE VIB_Z_SCORE IS NULL AND stddev_vib = 0;
+
+-- PROCESSING SUMMARY
+-- CTEs used: flight_maintenance_join, vibration_stats, calculated_metrics, final_logic
+-- JOINs used: JOIN on AIRCRAFT_ID between flights and maintenance.
+-- Filters applied: Flights within the last 365 days.
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: not-null, data validity, and domain checks.
+-- Column descriptions source: from rules
+-- Output Mode used: sqlx
