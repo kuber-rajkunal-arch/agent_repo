@@ -1,36 +1,60 @@
 -- UNIT TESTS
-
--- Test: FLIGHT_ID should not be null
-SELECT COUNT(*) AS failures
-FROM ${self()}
-WHERE FLIGHT_ID IS NULL;
-
--- Test: AIRCRAFT_ID should not be null
-SELECT COUNT(*) AS failures
-FROM ${self()}
-WHERE AIRCRAFT_ID IS NULL;
-
--- Test: AGGREGATE_HEALTH_RISK_SCORE should not be negative
-SELECT COUNT(*) AS failures
-FROM ${self()}
-WHERE AGGREGATE_HEALTH_RISK_SCORE < 0;
-
--- Test: OPERATIONAL_STATUS must be one of the predefined values
-SELECT COUNT(*) AS failures
-FROM ${self()}
-WHERE OPERATIONAL_STATUS NOT IN ('IMMEDIATE_GROUNDING', 'MONITOR_TREND', 'OPERATIONAL');
-
--- Test: days_since_last_replacement should not be negative
-SELECT COUNT(*) AS failures
-FROM ${self()}
-WHERE days_since_last_replacement < 0;
+-- Test for uniqueness of FLIGHT_ID
+SELECT
+  COUNT(*) AS failures
+FROM
+  (
+    SELECT
+      FLIGHT_ID
+    FROM
+      ${self()}
+    GROUP BY
+      FLIGHT_ID
+    HAVING
+      COUNT(*) > 1
+  );
+-- Test for non-null values in AIRCRAFT_ID
+SELECT
+  COUNT(*) AS failures
+FROM
+  ${self()}
+WHERE
+  AIRCRAFT_ID IS NULL;
+-- Test for non-null values in FLIGHT_TS
+SELECT
+  COUNT(*) AS failures
+FROM
+  ${self()}
+WHERE
+  FLIGHT_TS IS NULL;
+-- Test for valid OPERATIONAL_STATUS values
+SELECT
+  COUNT(*) AS failures
+FROM
+  ${self()}
+WHERE
+  OPERATIONAL_STATUS NOT IN ('IMMEDIATE_GROUNDING', 'MONITOR_TREND', 'OPERATIONAL');
+-- Test for non-negative AGGREGATE_HEALTH_RISK_SCORE
+SELECT
+  COUNT(*) AS failures
+FROM
+  ${self()}
+WHERE
+  AGGREGATE_HEALTH_RISK_SCORE < 0;
+-- Test for non-negative PRESSURE_EFFICIENCY_RATIO
+SELECT
+  COUNT(*) AS failures
+FROM
+  ${self()}
+WHERE
+  PRESSURE_EFFICIENCY_RATIO < 0;
 
 -- PROCESSING SUMMARY
 -- CTEs used: flight_metrics, health_trends, maintenance_window, transformed_unified, final_intelligence
--- JOINs used: LEFT JOIN on AIRCRAFT_ID and a time window. LEFT JOIN on AIRCRAFT_ID.
--- Filters applied: Not Applicable
+-- JOINs used: LEFT JOIN between health_trends, maintenance_window, and Audit tables.
+-- Filters applied: Join conditions applied on AIRCRAFT_ID and FLIGHT_TS.
 -- Incremental logic: absent
 -- pre_operations emitted: no
--- Unit tests emitted: 5 tests for not-null, data validation, and range checks.
+-- Unit tests emitted: uniqueness on FLIGHT_ID, not-null checks for AIRCRAFT_ID and FLIGHT_TS, domain check for OPERATIONAL_STATUS, and range checks for AGGREGATE_HEALTH_RISK_SCORE and PRESSURE_EFFICIENCY_RATIO.
 -- Column descriptions source: synthesized
 -- Output Mode used: sqlx
