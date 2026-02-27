@@ -1,76 +1,130 @@
-
 config {
-    type: "table",
-    schema: "AeroPredict",
-    name: "mdl_flight_deep_fact_v4",
-    description: "This model calculates aircraft health and operational status by analyzing flight telemetry, maintenance events, and audit data. It generates a health risk score, operational status, and other key performance indicators.",
-    tags: ["AeroPredict"],
-    assertions: {
-        uniqueKey: ["FLIGHT_ID"]
-    }
+  type: "table",
+  name: "mdl_flight_deep_fact_v4",
+  schema: "AeroPredict",
+  description: "Deep fact model for flight health and predictive maintenance, integrating telemetry, maintenance history, and audit data.",
+  tags: ["flight_analytics", "predictive_maintenance"],
+  assertions: {
+    uniqueKey: ["FLIGHT_ID"]
+  }
 }
 
 WITH
-flight_metrics AS (
+  flight_metrics AS (
     SELECT
-        FLIGHT_ID,
-        AIRCRAFT_ID,
-        FLIGHT_TS,
-        ENGINE_TEMP,
-        FATIGUE_INDEX,
-        (ENGINE_CYCLES_END - ENGINE_CYCLES_START) AS cycle_delta,
-        CAST(JSON_VALUE(TELEMETRY_JSON, '$.engine.vibration') AS DOUBLE) AS vib_val,
-        CAST(JSON_VALUE(TELEMETRY_JSON, '$.fuel.pressure') AS DOUBLE) AS fuel_val
-    FROM ${ref("Flight")}
-),
-
-health_trends AS (
+      FLIGHT_ID,
+      AIRCRAFT_ID,
+      FLIGHT_TS,
+      ENGINE_TEMP,
+      FATIGUE_INDEX,
+      CAST(JSON_VALUE(TELEMETRY_JSON, '''$.engine.vibration''') AS DOUBLE) AS vib_val,
+      CAST(JSON_VALUE(TELEMETRY_JSON, '''$.fuel.pressure''') AS DOUBLE) AS fuel_val,
+      (
+        ENGINE_CYCLES_END - ENGINE_CYCLES_START
+      ) AS cycle_delta
+    FROM
+      ${ref("Flight")}
+  ),
+  health_trends AS (
     SELECT
-        *,
-        AVG(vib_val) OVER (PARTITION BY AIRCRAFT_ID ORDER BY FLIGHT_TS ROWS BETWEEN 5 PRECEDING AND CURRENT ROW) AS rolling_vib_avg,
-        SUM(cycle_delta) OVER (PARTITION BY AIRCRAFT_ID ORDER BY FLIGHT_TS) AS cumulative_cycles
-    FROM flight_metrics
-),
-
-maintenance_window AS (
+      *,
+      AVG(vib_val) OVER (
+        PARTITION BY
+          AIRCRAFT_ID
+        ORDER BY
+          FLIGHT_TS ROWS BETWEEN 5 PRECEDING AND CURRENT ROW
+      ) AS rolling_vib_avg,
+      SUM(cycle_delta) OVER (
+        PARTITION BY
+          AIRCRAFT_ID
+        ORDER BY
+          FLIGHT_TS
+      ) AS cumulative_cycles
+    FROM
+      flight_metrics
+  ),
+  maintenance_window AS (
     SELECT
-        m.*,
-        DATE_DIFF(EVENT_START_TS, LAG(PART_REPLACED_TS) OVER (PARTITION BY AIRCRAFT_ID ORDER BY EVENT_START_TS), DAY) AS days_since_last_replacement
-    FROM ${ref("Maintenance")} m
-),
-
-transformed_unified AS (
+      m.*,
+      DATE_DIFF(
+        'day',
+        LAG(PART_REPLACED_TS) OVER (
+          PARTITION BY
+            AIRCRAFT_ID
+          ORDER BY
+            EVENT_START_TS
+        ),
+        EVENT_START_TS
+      ) AS days_since_last_replacement
+    FROM
+      ${ref("Maintenance")} AS m
+  ),
+  transformed_unified AS (
     SELECT
-        f.FLIGHT_ID,
-        f.AIRCRAFT_ID,
-        (CASE WHEN f.vib_val > (f.rolling_vib_avg * 1.2) THEN 30 ELSE 0 END + CASE WHEN f.ENGINE_TEMP > 950 THEN 40 ELSE 0 END + CASE WHEN f.FATIGUE_INDEX > 0.9 THEN 30 ELSE 0 END) AS AGGREGATE_HEALTH_RISK_SCORE,
-        CASE 
-            WHEN aud.SAFETY_FLAG = 'Y' AND f.ENGINE_TEMP > 900 THEN 'IMMEDIATE_GROUNDING' 
-            WHEN f.vib_val > f.rolling_vib_avg THEN 'MONITOR_TREND' 
-            ELSE 'OPERATIONAL' 
-        END AS OPERATIONAL_STATUS,
-        (f.fuel_val / NULLIF(aud.AUDIT_SCORE, 0)) * 100 AS PRESSURE_EFFICIENCY_RATIO,
-        m.MAINT_NOTES,
-        m.days_since_last_replacement
-    FROM health_trends AS f
-    LEFT JOIN maintenance_window AS m ON f.AIRCRAFT_ID = m.AIRCRAFT_ID AND f.FLIGHT_TS BETWEEN m.EVENT_START_TS AND m.EVENT_END_TS
-    LEFT JOIN ${ref("Audit")} AS aud ON f.AIRCRAFT_ID = aud.AIRCRAFT_ID
-),
-
-final_intelligence AS (
+      f.FLIGHT_ID,
+      f.AIRCRAFT_ID,
+      (
+        CASE
+          WHEN f.vib_val > (f.rolling_vib_avg * 1.2) THEN 30
+          ELSE 0
+        END + CASE
+          WHEN f.ENGINE_TEMP > 950 THEN 40
+          ELSE 0
+        END + CASE
+          WHEN f.FATIGUE_INDEX > 0.9 THEN 30
+          ELSE 0
+        END
+      ) AS AGGREGATE_HEALTH_RISK_SCORE,
+      CASE
+        WHEN aud.SAFETY_FLAG = 'Y' AND f.ENGINE_TEMP > 900 THEN 'IMMEDIATE_GROUNDING'
+        WHEN f.vib_val > f.rolling_vib_avg THEN 'MONITOR_TREND'
+        ELSE 'OPERATIONAL'
+      END AS OPERATIONAL_STATUS,
+      (
+        f.fuel_val / NULLIF(aud.AUDIT_SCORE, 0)
+      ) * 100 AS PRESSURE_EFFICIENCY_RATIO,
+      m.MAINT_NOTES,
+      m.days_since_last_replacement,
+      f.FLIGHT_TS,
+      f.ENGINE_TEMP,
+      f.FATIGUE_INDEX,
+      f.vib_val,
+      f.fuel_val,
+      f.cycle_delta,
+      f.rolling_vib_avg,
+      f.cumulative_cycles
+    FROM
+      health_trends AS f
+      LEFT JOIN maintenance_window AS m ON f.AIRCRAFT_ID = m.AIRCRAFT_ID
+      AND f.FLIGHT_TS BETWEEN m.EVENT_START_TS AND m.EVENT_END_TS
+      LEFT JOIN ${ref("Audit")} AS aud ON f.AIRCRAFT_ID = aud.AIRCRAFT_ID
+  ),
+  final_intelligence AS (
     SELECT
-        *,
-        CASE WHEN MAINT_NOTES IS NOT NULL THEN 1 ELSE 0 END AS TRIGGERED_MAINTENANCE
-    FROM transformed_unified
-)
-
+      *,
+      CASE
+        WHEN MAINT_NOTES IS NOT NULL THEN 1
+        ELSE 0
+      END AS TRIGGERED_MAINTENANCE
+    FROM
+      transformed_unified
+  )
 SELECT
-    FLIGHT_ID,
-    AIRCRAFT_ID,
-    AGGREGATE_HEALTH_RISK_SCORE,
-    OPERATIONAL_STATUS,
-    PRESSURE_EFFICIENCY_RATIO,
-    MAINT_NOTES,
-    days_since_last_replacement,
-    TRIGGERED_MAINTENANCE
-FROM final_intelligence
+  FLIGHT_ID,
+  AIRCRAFT_ID,
+  AGGREGATE_HEALTH_RISK_SCORE,
+  OPERATIONAL_STATUS,
+  PRESSURE_EFFICIENCY_RATIO,
+  MAINT_NOTES,
+  days_since_last_replacement,
+  FLIGHT_TS,
+  ENGINE_TEMP,
+  FATIGUE_INDEX,
+  vib_val,
+  fuel_val,
+  cycle_delta,
+  rolling_vib_avg,
+  cumulative_cycles,
+  TRIGGERED_MAINTENANCE
+FROM
+  final_intelligence
