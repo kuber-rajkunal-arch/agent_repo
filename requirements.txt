@@ -1,0 +1,8 @@
+# No external libraries beyond standard Python library are strictly required
+# for the core logic as per instructions.
+# If `dataclasses` (Python 3.7+) or `TypedDict` (Python 3.8+) were to be used
+# in a scenario where Python < 3.8 was target, `typing_extensions` would be needed.
+# For Python 3.8+ these are standard.
+# For testing:
+# pytest
+
