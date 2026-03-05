@@ -1,114 +1,117 @@
 # IoT Sensor Data Gateway
 
-This project implements a Python-based IoT Sensor Data Gateway designed to ingest, cleanse, normalize, and route sensor data from delivery trucks. It strictly adheres to the provided functional and technical requirements, focusing on production-quality code using standard Python libraries only.
+This project implements a Python-based IoT Sensor Data Gateway designed to ingest, clean, normalize, and route data from various IoT sensors on delivery trucks. It serves as a central processing unit for raw sensor data before it's dispatched to different downstream agents.
 
 ## Project Structure
-
-The project follows a standard Python package structure:
 
 ```
 project_name/
 ├── src/
-│   ├── __init__.py           # Makes 'src' a Python package
-│   ├── gateway_schemas.py    # Defines common data structures and constants
-│   ├── gateway_ingest.py     # Implements raw data ingestion (FR-GW-001)
-│   ├── gateway_cleanse.py    # Implements raw data cleansing (FR-GW-002)
-│   ├── gateway_normalize.py  # Implements data normalization (FR-GW-003)
-│   ├── gateway_router.py     # Implements data routing to agents (FR-GW-004, FR-GW-005)
-│   └── main.py               # Orchestrates the pipeline for demonstration
+│   ├── __init__.py             # Initializes the src package
+│   ├── agents.py               # Defines abstract agent interfaces and mock implementations (Maintenance, Customer Tracking)
+│   ├── cleaning.py             # Implements data cleaning logic for raw sensor data (FR-GW-002)
+│   ├── config.py               # Centralized application configuration (logging, rules, mappings)
+│   ├── data_models.py          # Defines standard data structures like StandardSensorData
+│   ├── gateway.py              # The main orchestration logic for the entire data pipeline
+│   ├── ingestion.py            # Handles raw sensor data reception and temporary storage (FR-GW-001)
+│   └── normalization.py        # Transforms cleaned data into a standard schema (FR-GW-003)
+│   └── routing.py              # Routes normalized data to appropriate agents (FR-GW-004, FR-GW-005)
 ├── tests/
-│   ├── test_gateway_ingest.py
-│   ├── test_gateway_cleanse.py
-│   ├── test_gateway_normalize.py
-│   └── test_gateway_router.py
-├── data/                     # Placeholder for data files (e.g., config, sample data)
-├── requirements.txt          # Project dependencies
-├── pyproject.toml            # Project metadata and build configuration
-├── README.md                 # This file
-├── LICENSE                   # License file
-└── .gitignore                # Git ignore rules
+│   ├── __init__.py
+│   ├── test_agents.py
+│   ├── test_cleaning.py
+│   ├── test_gateway.py
+│   ├── test_ingestion.py
+│   ├── test_normalization.py
+│   └── test_routing.py
+├── data/                       # Placeholder for any sample data or configuration files
+├── requirements.txt            # Python package dependencies
+├── pyproject.toml              # Project metadata and build configuration
+├── README.md                   # This README file
+├── LICENSE                     # Project license (MIT)
+└── .gitignore                  # Files/directories to ignore in Git
 ```
 
 ## Functional Requirements Implemented
 
-*   **FR-GW-001: Ingest Raw Sensor Data**: The `SensorDataIngestor` class handles receiving (simulated) and buffering raw sensor text.
-*   **FR-GW-002: Cleanse Raw Sensor Data**: The `SensorDataCleanser` class parses raw text, identifies "noisy" data (e.g., zeroed GPS, out-of-range values), applies cleaning rules, and flags issues.
-*   **FR-GW-003: Normalize Sensor Data to Standard Schema**: The `SensorDataNormalizer` class transforms cleansed data from various manufacturers into a predefined company-standard schema, including alert code standardization and schema validation.
-*   **FR-GW-004: Route Engine Alerts to Maintenance Agent**: The `GatewayRouter` class detects engine alerts in normalized data, formats them, and routes them to a simulated Maintenance Agent.
-*   **FR-GW-005: Route Location Updates to Customer Tracking Agent**: The `GatewayRouter` class identifies location updates in normalized data, formats them, and routes them to a simulated Customer Tracking Agent.
+The gateway addresses the following functional requirements:
 
-## Technical Implementation Details
+*   **FR-GW-001: Ingest Raw Sensor Data:** Receives and temporarily stores raw sensor data text.
+*   **FR-GW-002: Clean Raw Sensor Data:** Identifies and cleans "noisy" data (e.g., GPS signal losses, erratic readings).
+*   **FR-GW-003: Normalize Data to Standard Schema:** Transforms cleaned data from various manufacturers into a predefined standard schema.
+*   **FR-GW-004: Route Engine Alerts to Maintenance Agent:** Detects "Engine Alerts" in normalized data and routes them to a Maintenance Agent.
+*   **FR-GW-005: Route Location Updates to Customer Tracking Agent:** Identifies "Location Updates" in normalized data and routes them to a Customer Tracking Agent.
 
-*   **Standard Python Only**: No external libraries like PySpark, Databricks, or cloud-specific SDKs are used for the core logic. All components are built using Python's standard library.
-*   **Modularity**: Each functional requirement is encapsulated within its own module (`gateway_ingest.py`, `gateway_cleanse.py`, etc.) and implemented as Python classes.
-*   **Data Flow**: Data progresses through the pipeline sequentially:
-    1.  `SensorDataIngestor` buffers raw text.
-    2.  `SensorDataCleanser` retrieves raw text, parses it, applies cleansing rules, and produces `CleansedSensorData` (a dictionary).
-    3.  `SensorDataNormalizer` takes `CleansedSensorData`, identifies the source, applies manufacturer-specific mappings, validates against the `StandardSensorData` schema, and outputs `StandardSensorData`.
-    4.  `GatewayRouter` inspects `StandardSensorData` for alerts and location updates, formats relevant payloads, and "transmits" them to simulated agents (logging output).
-*   **Configuration**: Rules, schemas, and agent configurations are managed internally within classes using dictionaries. In a real-world scenario, these would typically be loaded from external sources (e.g., YAML files, environment variables, a configuration service).
-*   **Error Handling and Logging**: `logging` is used extensively for debugging, info, warning, and error messages. `try-except` blocks are used to catch and report processing errors, preventing pipeline halts where possible.
-*   **Data Representation**: Raw sensor data is assumed to be a comma-separated string. It's parsed into `RawSensorData` (TypedDict), then processed into `CleansedSensorData` (TypedDict), and finally into `StandardSensorData` (TypedDict) for internal consistency and type hinting benefits.
-*   **Simulations**:
-    *   **Ingestion**: `SensorDataIngestor` accepts strings directly, simulating a stream.
-    *   **Agent Communication**: `GatewayRouter` simulates transmission to external agents by logging the formatted payloads to the console.
-
-## Setup and Running
+## Getting Started
 
 ### Prerequisites
 
-*   Python 3.8+ (for `TypedDict` directly from `typing`)
+*   Python 3.8+
 
 ### Installation
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/your-username/iot-sensor-data-gateway.git
-    cd iot-sensor-data-gateway
+    git clone https://github.com/yourusername/iot-sensor-data-gateway.git
+    cd iot-sensor-data-gateway/project_name
     ```
 2.  **Create a virtual environment (recommended):**
     ```bash
     python -m venv .venv
-    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+    source .venv/bin/activate  # On Windows, use `.venv\Scripts\activate`
     ```
 3.  **Install dependencies:**
+    This project uses only standard Python libraries, so there are no external dependencies listed in `requirements.txt` currently.
     ```bash
-    pip install -e .  # Install the project in editable mode
-    pip install -e ".[dev]" # Install dev dependencies like pytest
+    # pip install -r requirements.txt # If external dependencies are added later
     ```
 
 ### Running the Gateway
 
-To run the demonstration pipeline with example data:
+You can run a simulation of the gateway processing sample data directly:
 
 ```bash
-python project_name/src/main.py
+python src/gateway.py
 ```
 
-This will execute the `main.py` script, which orchestrates the pipeline using predefined sample raw sensor data. You will see log messages indicating the flow of data, cleansing actions, normalization results, and simulated transmissions to agents.
+This will execute the `run_simulation` method in `gateway.py`, demonstrating the flow with predefined raw data samples, including cases for cleaning and routing.
 
 ### Running Tests
 
-To run the unit tests:
+To ensure everything is working correctly, run the provided unit tests:
 
 ```bash
-pytest
+pip install pytest
+pytest tests/
 ```
 
-This will execute all tests in the `tests/` directory, ensuring that each component of the gateway functions correctly according to its requirements.
+## Configuration
 
-## Future Enhancements (beyond scope of current requirements)
+The `src/config.py` module holds all configurable parameters for the gateway, including:
 
-*   **Asynchronous Processing**: Implement `asyncio` for non-blocking I/O operations and higher throughput, especially for ingestion and agent communication.
-*   **Real-time Ingestion**: Integrate with message queues (e.g., Kafka, RabbitMQ) or network sockets for actual real-time data streams.
-*   **Advanced Cleansing Rules**: Utilize machine learning models for anomaly detection, more sophisticated interpolation techniques, and adaptive noise filtering.
-*   **Configuration Management**: Load configurations (rules, schemas, mappings, agent endpoints) from external sources like configuration files (YAML, TOML), environment variables, or a dedicated configuration service.
-*   **Persistence**: Store intermediate and final processed data in a database (SQL, NoSQL) or a distributed file system.
-*   **Monitoring and Alerting**: Integrate with monitoring systems (e.g., Prometheus, Grafana) and a dedicated alerting service.
-*   **Scalability**: Deploy components as microservices, potentially in a containerized environment (Docker, Kubernetes), to handle varying loads.
-*   **Retry Mechanisms & Dead-Letter Queues**: Implement robust error handling for external communication failures.
-*   **API for Agents**: Provide actual API endpoints (e.g., using FastAPI or Flask) for the simulated Maintenance and Customer Tracking Agents.
+*   Logging levels and format
+*   Regex patterns and default values for data cleaning
+*   Mapping rules for different sensor manufacturers (e.g., Bosch, Garmin) to the standard data schema
+*   Endpoints for the Maintenance and Customer Tracking Agents (currently mock endpoints)
+*   Rules for detecting engine alerts
+
+You can modify these parameters to customize the gateway's behavior.
+
+## Extending the Gateway
+
+*   **New Sensor Manufacturers:** Add new entries to `AppConfig.MANUFACTURER_MAPPINGS` in `src/config.py` and potentially update `Normalizer._identify_manufacturer` if the identification logic changes.
+*   **New Noise Patterns/Cleaning Rules:** Update `AppConfig.NOISE_PATTERNS` and `AppConfig.CLEANING_DEFAULTS` in `src/config.py`, and implement corresponding logic in `DataCleaner.clean_raw_data`.
+*   **New Agents/Routing:**
+    1.  Define a new `AbstractXAgent` in `src/agents.py`.
+    2.  Create a concrete `MockXAgent` (or real implementation).
+    3.  Create a `XRouter` class in `src/routing.py` to identify relevant data and interact with the new agent.
+    4.  Integrate the new router into `IoTDataGateway` in `src/gateway.py`.
+*   **Real Agent Integrations:** Replace `MockMaintenanceAgent` and `MockCustomerTrackingAgent` with actual implementations that communicate with external services (e.g., via HTTP, Kafka, AMQP) in `src/agents.py`.
 
 ## License
 
-This project is licensed under the MIT License - see the `LICENSE` file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+_This project is a demonstration of enterprise-grade Python system design based on specified functional and technical requirements._
