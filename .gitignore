@@ -1,42 +1,15 @@
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.pyc
-*.pyd
 *.pyo
+*.pyd
+.Python
+env/
+.venv/
+venv/
 *.egg-info/
 .pytest_cache/
-
-# Distributions
-dist/
-build/
-*.egg
-*.whl
-
-# Virtual environment
-.venv/
-env/
-
-# Editor files
-.vscode/
-.idea/
-
-# OS generated files
+.coverage
+htmlcov/
 .DS_Store
-.localized
-Thumbs.db
-
-# Logs
-*.log
-logs/
-
-# Database
-*.db
-*.sqlite3
-
-# Configuration files
-.env
-.flaskenv
-
-# Jupyter Notebooks
-.ipynb_checkpoints/
-
+.vscode/
