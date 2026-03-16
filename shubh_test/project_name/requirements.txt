@@ -1,0 +1,3 @@
+# No external dependencies beyond standard library for this project.
+# If using specific versions of Python, you might specify:
+# python_version >= "3.8"
