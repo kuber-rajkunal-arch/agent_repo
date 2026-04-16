@@ -1,0 +1,7 @@
+# Google Cloud
+.gcloud/
+*.json
+*.pem
+
+# Local environment
+.DS_Store
