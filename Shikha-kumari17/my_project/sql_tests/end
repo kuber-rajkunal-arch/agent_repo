@@ -1,0 +1,72 @@
+===================path:pl_sql_grade_calculator/tests/test_audit_log_table_ddl.sql====================
+-- Test script for DDL: 01_create_audit_log_table.sql
+-- This script verifies the structure of the GRADES_APP.GRADE_AUDIT_LOG table.
+-- It should be run after the DDL script has been executed.
+-- Assumes the user has SELECT privileges on DBA/USER dictionary views.
+
+-- Test 1: Completeness Test - Verify all columns exist
+WITH expected_columns AS (
+  SELECT 'LOG_ID' AS column_name FROM DUAL UNION ALL
+  SELECT 'LOG_TIMESTAMP' AS column_name FROM DUAL UNION ALL
+  SELECT 'INPUT_MARK' AS column_name FROM DUAL UNION ALL
+  SELECT 'CALCULATED_GRADE' AS column_name FROM DUAL UNION ALL
+  SELECT 'ERROR_MESSAGE' AS column_name FROM DUAL
+)
+SELECT
+  CASE
+    WHEN (SELECT COUNT(*) FROM USER_TAB_COLUMNS WHERE table_name = 'GRADE_AUDIT_LOG') = (SELECT COUNT(*) FROM expected_columns)
+    AND (SELECT COUNT(*) FROM USER_TAB_COLUMNS utc JOIN expected_columns ec ON utc.column_name = ec.column_name WHERE utc.table_name = 'GRADE_AUDIT_LOG') = (SELECT COUNT(*) FROM expected_columns)
+    THEN 'PASS: All expected columns are present.'
+    ELSE 'FAIL: Mismatch in expected columns for GRADE_AUDIT_LOG.'
+  END AS test_column_completeness
+FROM DUAL;
+
+
+-- Test 2: Domain Test - Verify column data types, sizes, and precision
+WITH expected_types AS (
+  SELECT 'LOG_ID' AS column_name, 'NUMBER' AS data_type, NULL AS data_length, 38 AS data_precision, 0 AS data_scale, 'N' as nullable FROM DUAL UNION ALL
+  SELECT 'LOG_TIMESTAMP' AS column_name, 'TIMESTAMP(6) WITH LOCAL TIME ZONE' AS data_type, 13 AS data_length, NULL AS data_precision, 6 AS data_scale, 'Y' as nullable FROM DUAL UNION ALL
+  SELECT 'INPUT_MARK' AS column_name, 'NUMBER' AS data_type, 22 AS data_length, 5 AS data_precision, 2 AS data_scale, 'Y' as nullable FROM DUAL UNION ALL
+  SELECT 'CALCULATED_GRADE' AS column_name, 'VARCHAR2' AS data_type, 20 AS data_length, NULL AS data_precision, NULL AS data_scale, 'Y' as nullable FROM DUAL UNION ALL
+  SELECT 'ERROR_MESSAGE' AS column_name, 'VARCHAR2' AS data_type, 4000 AS data_length, NULL AS data_precision, NULL AS data_scale, 'Y' as nullable FROM DUAL
+)
+SELECT et.column_name,
+  CASE
+    WHEN utc.data_type LIKE et.data_type || '%'
+     AND utc.char_length = et.data_length
+     AND NVL(utc.data_precision, -1) = NVL(et.data_precision, -1)
+     AND NVL(utc.data_scale, -1) = NVL(et.data_scale, -1)
+     AND utc.nullable = et.nullable
+    THEN 'PASS'
+    ELSE 'FAIL - Expected Type: ' || et.data_type || '(' || et.data_length || '), Precision/Scale: ' || et.data_precision || '/' || et.data_scale || ', Nullable: ' || et.nullable ||
+         ' | Actual Type: ' || utc.data_type || '(' || utc.char_length || '), Precision/Scale: ' || utc.data_precision || '/' || utc.data_scale || ', Nullable: ' || utc.nullable
+  END AS test_data_types
+FROM expected_types et
+LEFT JOIN USER_TAB_COLUMNS utc
+  ON et.column_name = utc.column_name AND utc.table_name = 'GRADE_AUDIT_LOG';
+
+
+-- Test 3: Uniqueness and Not-Null Test - Verify Primary Key constraint
+SELECT
+  CASE
+    WHEN COUNT(*) = 1
+    THEN 'PASS: Primary key PK_GRADE_AUDIT_LOG exists on LOG_ID.'
+    ELSE 'FAIL: Primary key on GRADE_AUDIT_LOG.LOG_ID is missing or incorrect.'
+  END AS test_primary_key
+FROM USER_CONSTRAINTS uc
+JOIN USER_CONS_COLUMNS ucc ON uc.constraint_name = ucc.constraint_name
+WHERE uc.table_name = 'GRADE_AUDIT_LOG'
+  AND uc.constraint_type = 'P'
+  AND uc.constraint_name = 'PK_GRADE_AUDIT_LOG'
+  AND ucc.column_name = 'LOG_ID';
+
+
+-- Test 4: Not-Null Test - Verify LOG_ID is not nullable (enforced by PK)
+SELECT
+  CASE
+    WHEN nullable = 'N'
+    THEN 'PASS: LOG_ID column is correctly set to NOT NULL.'
+    ELSE 'FAIL: LOG_ID column should be NOT NULL.'
+  END AS test_log_id_not_null
+FROM USER_TAB_COLUMNS
+WHERE table_name = 'GRADE_AUDIT_LOG' AND column_name = 'LOG_ID';
