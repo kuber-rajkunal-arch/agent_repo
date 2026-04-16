@@ -1,0 +1,7 @@
+# This file is included to conform to the specified project structure.
+# For a pure SQL project, it would typically be empty.
+# If a Python-based deployment tool (e.g., dbt, custom script) were used,
+# relevant libraries would be listed here.
+#
+# Example for a deployment script:
+# google-cloud-bigquery
