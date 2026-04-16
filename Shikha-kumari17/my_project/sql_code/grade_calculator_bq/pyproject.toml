@@ -1,0 +1,8 @@
+[project]
+name = "grade_calculator_bq"
+version = "1.0.0"
+description = "BigQuery SQL routines for calculating academic grades based on scores."
+authors = [
+    {name = "Senior Software Engineer"},
+]
+requires-python = ">=3.8"
