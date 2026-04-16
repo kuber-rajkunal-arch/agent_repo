@@ -1,0 +1,55 @@
+===================path:grade_calculator/tests/test_calculate_letter_grade.sql====================
+-- Test suite for the calculate_letter_grade function.
+--
+-- To run these tests, execute this script in a BigQuery environment
+-- where the `calculate_letter_grade` function has been deployed.
+--
+-- IMPORTANT: Replace `your_project.your_dataset` with the actual
+-- project and dataset where the function is located.
+
+WITH test_cases AS (
+  -- Test cases based on TRD_SQL_Grade_Calculator section 8.
+  -- Includes boundary, typical, and edge values.
+  SELECT 'Grade A: Upper boundary' AS test_name, 100 AS input_score, 'A' AS expected_grade
+  UNION ALL
+  SELECT 'Grade A: Lower boundary' AS test_name, 90 AS input_score, 'A' AS expected_grade
+  UNION ALL
+  SELECT 'Grade B: Upper boundary (exclusive)' AS test_name, 89.9 AS input_score, 'B' AS expected_grade
+  UNION ALL
+  SELECT 'Grade B: Typical value' AS test_name, 82 AS input_score, 'B' AS expected_grade
+  UNION ALL
+  SELECT 'Grade B: Lower boundary' AS test_name, 75 AS input_score, 'B' AS expected_grade
+  UNION ALL
+  SELECT 'Grade C: Upper boundary (exclusive)' AS test_name, 74.9 AS input_score, 'C' AS expected_grade
+  UNION ALL
+  SELECT 'Grade C: Typical value' AS test_name, 65 AS input_score, 'C' AS expected_grade
+  UNION ALL
+  SELECT 'Grade C: Lower boundary' AS test_name, 60 AS input_score, 'C' AS expected_grade
+  UNION ALL
+  SELECT 'Grade D: Upper boundary (exclusive)' AS test_name, 59.9 AS input_score, 'D' AS expected_grade
+  UNION ALL
+  SELECT 'Grade D: Typical value' AS test_name, 30 AS input_score, 'D' AS expected_grade
+  UNION ALL
+  SELECT 'Grade D: Zero score' AS test_name, 0 AS input_score, 'D' AS expected_grade
+  UNION ALL
+  SELECT 'Grade D: Negative score' AS test_name, -50 AS input_score, 'D' AS expected_grade
+  UNION ALL
+  -- Per TRD 9, behavior for non-numerical or invalid input is not defined.
+  -- A NULL input should result in a NULL output from the CASE statement.
+  SELECT 'Undefined Input: NULL score' AS test_name, CAST(NULL AS NUMERIC) AS input_score, CAST(NULL AS STRING) AS expected_grade
+)
+SELECT
+  test_name,
+  input_score,
+  expected_grade,
+  -- The function to be tested.
+  -- IMPORTANT: Replace `your_project.your_dataset` with your details.
+  `your_project.your_dataset.calculate_letter_grade`(input_score) AS actual_grade,
+  IF(
+    `your_project.your_dataset.calculate_letter_grade`(input_score) = expected_grade
+    OR (`your_project.your_dataset.calculate_letter_grade`(input_score) IS NULL AND expected_grade IS NULL),
+    'PASS',
+    'FAIL'
+  ) AS test_result
+FROM
+  test_cases;
