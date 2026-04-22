@@ -1,0 +1,1 @@
+# No Python requirements for this SQL-only project.
