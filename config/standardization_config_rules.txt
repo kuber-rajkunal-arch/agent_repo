@@ -1,0 +1,91 @@
+# =========================================
+# DATA STANDARDIZATION CONFIGURATION RULES
+# =========================================
+
+# -----------------------------------------
+# 1. Date-Time Standardization
+# -----------------------------------------
+FIELD: all_datetime_fields
+STANDARD_FORMAT: YYYY-MM-DD HH:MM:SS
+TIMEZONE: preserve_original
+INVALID_ACTION: set_null
+
+
+# -----------------------------------------
+# 2. String Cleansing (Applicable to all string fields)
+# -----------------------------------------
+FIELD: all_string_fields
+OPERATIONS:
+  - TRIM_WHITESPACE
+  - REMOVE_SPECIAL_CHARACTERS
+  - NORMALIZE_SPACES (replace multiple spaces with single space)
+NULL_LIKE_VALUES:
+  - "NA"
+  - "N/A"
+  - "-"
+  - "--"
+  - "NULL"
+  - "null"
+  - ""
+NULL_REPLACEMENT: NULL
+
+
+# -----------------------------------------
+# 3. Address Standardization
+# -----------------------------------------
+
+# Country Standardization
+FIELD: country
+CASE: UPPER
+REFERENCE_SOURCE: ISO_COUNTRY_LIST
+MAPPINGS:
+  - "INDIA", "IN", "IND" -> "INDIA"
+  - "UNITED STATES", "USA", "U.S.A", "US" -> "UNITED STATES"
+INVALID_ACTION: set_null
+
+# City Standardization
+FIELD: city
+CASE: TITLE
+OPERATIONS:
+  - TRIM_WHITESPACE
+  - REMOVE_SPECIAL_CHARACTERS
+REFERENCE_SOURCE: MASTER_CITY_LIST
+INVALID_ACTION: keep_original
+
+
+# -----------------------------------------
+# 4. Phone Number Standardization
+# -----------------------------------------
+FIELD: phone_number
+OPERATIONS:
+  - REMOVE_NON_NUMERIC_CHARACTERS
+  - REMOVE_LEADING_ZEROS
+COUNTRY_CODE_HANDLING:
+  - IF_MISSING: prepend_country_code
+STANDARD_FORMAT: +[COUNTRY_CODE][NUMBER]
+MIN_LENGTH: 10
+MAX_LENGTH: 15
+INVALID_ACTION: set_null
+
+
+# -----------------------------------------
+# 5. Industry Standardization
+# -----------------------------------------
+FIELD: industry
+CASE: UPPER
+REFERENCE_LIST:
+  - INFORMATION TECHNOLOGY
+  - FINANCE
+  - HEALTHCARE
+  - MANUFACTURING
+  - RETAIL
+MAPPINGS:
+  - "IT", "I.T", "I.T.", "INFORMATION TECH" -> "INFORMATION TECHNOLOGY"
+  - "FIN", "FINANCE SERVICES" -> "FINANCE"
+  - "HEALTH CARE", "HC" -> "HEALTHCARE"
+DEFAULT_ACTION: set_unknown
+
+
+# =========================================
+# END OF CONFIGURATION
+# =========================================
