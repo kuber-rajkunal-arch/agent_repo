@@ -1,0 +1,96 @@
+/*
+  This BQSQL script creates views that replicate the data transformation logic
+  found in the provided COBOL programs (CBL0002, CBL0004, CBL0005).
+
+  - The views select data from a source table, which is assumed to be named
+    `cobol_acct_rec` and populated from the `ACCT-REC` file layout.
+  - The column names and data types for the source table are derived directly
+    from the `FD ACCT-REC` definition in the COBOL source.
+  - Each view corresponds to the output (`PRINT-LINE`) of a specific COBOL program.
+  - The logic is implemented as views to represent the repeatable, non-materialized
+    nature of the COBOL programs' execution.
+
+  ASSUMED SOURCE TABLE:
+  The following DDL is inferred from the `FD ACCT-REC` section and is the
+  expected structure of the source table `your_project.your_dataset.cobol_acct_rec`.
+
+  CREATE TABLE `your_project.your_dataset.cobol_acct_rec` (
+    acct_no      STRING(8)    OPTIONS(description="PIC X(8)"),
+    acct_limit   NUMERIC(9, 2)  OPTIONS(description="PIC S9(7)V99 COMP-3"),
+    acct_balance NUMERIC(9, 2)  OPTIONS(description="PIC S9(7)V99 COMP-3"),
+    last_name    STRING(20)   OPTIONS(description="PIC X(20)"),
+    first_name   STRING(15)   OPTIONS(description="PIC X(15)"),
+    street_addr  STRING(25)   OPTIONS(description="PIC X(25)"),
+    city_county  STRING(20)   OPTIONS(description="PIC X(20)"),
+    usa_state    STRING(15)   OPTIONS(description="PIC X(15)"),
+    reserved     STRING(7)    OPTIONS(description="PIC X(7)"),
+    comments     STRING(50)    OPTIONS(description="PIC X(50)")
+  );
+
+  NOTE ON EXCLUDED PROGRAMS:
+  The COBOL program `TIC-TAC-TOBOL` is not translated. It describes a stateful,
+  interactive application with screen I/O and procedural game logic. This logic
+  does not map to a declarative, set-based data transformation and is therefore
+  unsuitable for implementation in BQSQL.
+*/
+
+-- =============================================================================
+-- View for CBL0002
+-- =============================================================================
+-- This view replicates the logic of the CBL0002 program, which performs a
+-- direct move of several fields from the input record to the output record.
+CREATE OR REPLACE VIEW `your_project.your_dataset.cbl0002_report_vw`
+OPTIONS(
+  friendly_name="CBL0002 Account Report",
+  description="""Replicates the data selection from COBOL program CBL0002.
+Source: FD ACCT-REC
+Target: FD PRINT-LINE as defined in CBL0002.
+Logic: Direct mapping of ACCT-NO, ACCT-LIMIT, ACCT-BALANCE, LAST-NAME, FIRST-NAME, COMMENTS."""
+)
+AS
+SELECT
+  -- 05  ACCT-NO-O      PIC X(8).
+  acct_no,
+  -- 05  ACCT-LIMIT-O   PIC $$,$$$,$$9.99.
+  acct_limit,
+  -- 05  ACCT-BALANCE-O PIC $$,$$$,$$9.99.
+  acct_balance,
+  -- 05  LAST-NAME-O    PIC X(20).
+  last_name,
+  -- 05  FIRST-NAME-O   PIC X(15).
+  first_name,
+  -- 05  COMMENTS-O     PIC X(50).
+  comments
+FROM
+  `your_project.your_dataset.cobol_acct_rec`;
+
+
+-- =============================================================================
+-- View for CBL0004 / CBL0005
+-- =============================================================================
+-- This view replicates the logic of the CBL0004 and CBL0005 programs.
+-- It selects a subset of fields in a specific order for a formatted report.
+-- The COBOL `FILLER` fields, used for spacing in fixed-width files, are
+-- omitted as they have no equivalent in a structured SQL result set.
+-- The COBOL display formatting (`$$`, `ZZ`) is a presentation-layer concern;
+-- the view returns the raw numeric data for consumer-side formatting.
+CREATE OR REPLACE VIEW `your_project.your_dataset.cbl0004_report_vw`
+OPTIONS(
+  friendly_name="CBL0004 Formatted Account Report",
+  description="""Replicates the data selection from COBOL program CBL0004/CBL0005.
+Source: FD ACCT-REC
+Target: FD PRINT-LINE as defined in CBL0004/CBL0005.
+Logic: Selects and reorders a subset of fields: ACCT-NO, LAST-NAME, ACCT-LIMIT, ACCT-BALANCE."""
+)
+AS
+SELECT
+  -- 05  ACCT-NO-O      PIC X(8).
+  acct_no,
+  -- 05  LAST-NAME-O    PIC X(20).
+  last_name,
+  -- 05  ACCT-LIMIT-O   PIC $$,$$$,$$9.99.
+  acct_limit,
+  -- 05  ACCT-BALANCE-O PIC $$,$$$,$$9.99.
+  acct_balance
+FROM
+  `your_project.your_dataset.cobol_acct_rec`;
