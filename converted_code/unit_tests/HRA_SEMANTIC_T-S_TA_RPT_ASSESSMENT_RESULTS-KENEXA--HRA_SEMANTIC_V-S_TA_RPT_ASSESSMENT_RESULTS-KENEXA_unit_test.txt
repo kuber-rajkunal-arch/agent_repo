@@ -1,0 +1,35 @@
+-- test: row_count_check
+-- Verifies that the number of rows in the new table is greater than zero.
+SELECT
+  IF(COUNT(*) > 0, 'PASS', 'FAIL') AS result
+FROM
+  `gcp-project-id.HRA_SEMANTIC_T.S_TA_RPT_ASSESSMENT_RESULTS`
+WHERE
+  SOURCE_SYSTEM_ID = 501;
+
+-- test: applicant_id_not_null
+-- Ensures that for any given FORM_INSTANCE_ID, the APPLICANT_ID is not null.
+SELECT
+  IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result
+FROM
+  `gcp-project-id.HRA_SEMANTIC_T.S_TA_RPT_ASSESSMENT_RESULTS`
+WHERE
+  SOURCE_SYSTEM_ID = 501 AND APPLICANT_ID IS NULL;
+
+-- test: form_type_id_union
+-- Checks if both FORM_TYPE_IDs (336 and 1246) from the UNION ALL are present in the final table.
+SELECT
+  IF(COUNT(DISTINCT FORM_TYPE_ID) = 2, 'PASS', 'FAIL') AS result
+FROM
+  `gcp-project-id.HRA_SEMANTIC_T.S_TA_RPT_ASSESSMENT_RESULTS`
+WHERE
+  SOURCE_SYSTEM_ID = 501 AND FORM_TYPE_ID IN (336, 1246);
+
+-- test: encrypted_columns_populated
+-- Verifies that the encrypted columns are populated and not null for at least one record.
+SELECT
+  IF(COUNT(*) > 0, 'PASS', 'FAIL') AS result
+FROM
+  `gcp-project-id.HRA_SEMANTIC_T.S_TA_RPT_ASSESSMENT_RESULTS`
+WHERE
+  SOURCE_SYSTEM_ID = 501 AND APPLICANT_FIRST_NAME_ENCR IS NOT NULL AND OVERALL_SCORE_PERCENT_ENCR IS NOT NULL;
