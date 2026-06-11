@@ -1,0 +1,17 @@
+-- test: check_if_curr_ind_is_updated_to_N
+-- Verifies that for candidates with multiple MOST_RCNT_IND values, the CURR_IND for the record with MOST_RCNT_IND = 'no' is updated to 'N'.
+SELECT IF(
+  (SELECT COUNT(*) FROM `gcp-project-id.HRA_CORE_V.EXPERIENCE` WHERE CANDIDATE_ID IN (SELECT CANDIDATE_ID FROM `gcp-project-id.HRA_CORE_V.EXPERIENCE` GROUP BY CANDIDATE_ID HAVING COUNT(DISTINCT MOST_RCNT_IND) > 1) AND MOST_RCNT_IND = 'no' AND CURR_IND = 'Y') = 0,
+  'PASS', 'FAIL') AS result;
+
+-- test: check_if_eff_end_dttm_is_populated
+-- Verifies that EFF_END_DTTM is populated for the records that were updated.
+SELECT IF(
+  (SELECT COUNT(*) FROM `gcp-project-id.HRA_CORE_V.EXPERIENCE` WHERE CANDIDATE_ID IN (SELECT CANDIDATE_ID FROM `gcp-project-id.HRA_CORE_V.EXPERIENCE` GROUP BY CANDIDATE_ID HAVING COUNT(DISTINCT MOST_RCNT_IND) > 1) AND MOST_RCNT_IND = 'no' AND CURR_IND = 'N' AND EFF_END_DTTM IS NOT NULL) > 0,
+  'PASS', 'FAIL') AS result;
+
+-- test: no_Y_record_with_no_most_rcnt_ind
+-- Ensures there are no records with CURR_IND = 'Y' and MOST_RCNT_IND = 'no' for any candidate that has records with different MOST_RCNT_IND.
+SELECT IF(
+  (SELECT COUNT(*) FROM `gcp-project-id.HRA_CORE_V.EXPERIENCE` WHERE CURR_IND = 'Y' AND MOST_RCNT_IND = 'no' AND CANDIDATE_ID IN (SELECT CANDIDATE_ID FROM `gcp-project-id.HRA_CORE_V.EXPERIENCE` GROUP BY CANDIDATE_ID HAVING COUNT(DISTINCT MOST_RCNT_IND) > 1)) = 0,
+  'PASS', 'FAIL') AS result;
