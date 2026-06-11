@@ -1,0 +1,31 @@
+-- UNIT TESTS
+-- Unit Test 1: Verify that records with MOST_RCNT_IND = 'no' and CURR_IND = 'Y' are updated to CURR_IND = 'N'
+SELECT
+    IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+    'update_curr_ind_to_n' AS test_name
+FROM `gcp-project.HRA_CORE_V.EXPERIENCE`
+WHERE MOST_RCNT_IND = 'no' AND CURR_IND = 'Y';
+
+-- Unit Test 2: Verify that EFF_END_DTTM is populated for the updated records.
+SELECT
+    IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+    'eff_end_dttm_population' AS test_name
+FROM `gcp-project.HRA_CORE_V.EXPERIENCE`
+WHERE MOST_RCNT_IND = 'no' AND CURR_IND = 'N' AND EFF_END_DTTM IS NULL;
+
+-- Unit Test 3: Check for null UPDT_PRCS_ID in updated records
+SELECT
+    IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+    'not_null_updt_prcs_id' AS test_name
+FROM `gcp-project.HRA_CORE_V.EXPERIENCE`
+WHERE MOST_RCNT_IND = 'no' AND CURR_IND = 'N' AND UPDT_PRCS_ID IS NULL;
+
+-- PROCESSING SUMMARY
+-- CTEs used: NONE
+-- JOINs used: INNER JOIN on CANDIDATE_ID
+-- Filters applied: CURR_IND = 'Y', MOST_RCNT_IND = 'no'
+-- Incremental logic: present
+-- pre_operations emitted: no
+-- Unit tests emitted: 3
+-- Column descriptions source: synthesized
+-- Output Mode used: sql
