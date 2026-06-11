@@ -1,0 +1,31 @@
+-- UNIT TESTS
+-- test: target_table_not_empty
+SELECT
+    IF(COUNT(*) > 0, 'PASS', 'FAIL') AS result,
+    'target_table_not_empty' AS test_name
+FROM `HRA_CORE_T.ASSOCIATE_ADGROUP_ANOMALY_SNAPSHOT`;
+
+-- test: no_null_user_names
+SELECT
+    IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+    'no_null_user_names' AS test_name
+FROM `HRA_CORE_T.ASSOCIATE_ADGROUP_ANOMALY_SNAPSHOT`
+WHERE ASSOC_USER_NAME IS NULL;
+
+-- test: snapshot_date_is_current
+SELECT
+    IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+    'snapshot_date_is_current' AS test_name
+FROM `HRA_CORE_T.ASSOCIATE_ADGROUP_ANOMALY_SNAPSHOT`
+WHERE SNAPSHOT_DATE <> CURRENT_DATE();
+
+
+-- PROCESSING SUMMARY
+-- CTEs used: Multiple temporary tables used for staging and intermediate processing.
+-- JOINs used: Joins are used to combine employee, organization, and job profile data.
+-- Filters applied: Filters are applied based on employment status, organizational hierarchy, and job attributes.
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: target_table_not_empty, no_null_user_names, snapshot_date_is_current
+-- Column descriptions source: synthesized
+-- Output Mode used: sql
