@@ -1,0 +1,23 @@
+-- UNIT TESTS
+-- test: not_null_assoc_cid
+SELECT
+  IF(COUNTIF(ASSOC_CID IS NULL) = 0, 'PASS', 'FAIL') AS result,
+  'not_null_assoc_cid' AS test_name
+FROM `gcp-project-id.HRA_SEMANTIC_V.S_EMPLOYEE_DATA_WORKDAY`;
+
+-- test: not_null_job_title
+SELECT
+  IF(COUNTIF(JOB_TITLE IS NULL) = 0, 'PASS', 'FAIL') AS result,
+  'not_null_job_title' AS test_name
+FROM `gcp-project-id.HRA_SEMANTIC_V.S_EMPLOYEE_DATA_WORKDAY`;
+
+
+-- PROCESSING SUMMARY
+-- CTEs used: NONE
+-- JOINs used: 2
+-- Filters applied: NONE
+-- Incremental logic: absent
+-- pre_operations emitted: no
+-- Unit tests emitted: not_null_assoc_cid, not_null_job_title
+-- Column descriptions source: from rules
+-- Output Mode used: sql
