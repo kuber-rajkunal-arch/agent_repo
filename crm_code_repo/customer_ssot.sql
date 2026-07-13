@@ -1,66 +1,58 @@
 /*
---------------------------------------------------------------------------------
---
--- Name: customer_ssot.sql
---
--- Purpose: Creates and populates the curated (Gold) tables for the Customer
---          Single Source of Truth (SSOT) data platform. This script is
---          designed to be idempotent and handles incremental data loads using
---          an SCD Type 1 merge pattern.
---
--- Author: Senior Software Engineer
---
--- Created: 2023-10-27
---
--- Copyright: (c) 2023 Your Company
---
---------------------------------------------------------------------------------
---
--- Notes:
--- - This script assumes the existence of staging tables in the 'raw' dataset
---   (e.g., `your_project_id.your_raw_dataset.stg_customer`).
--- - Project and dataset names are parameterized (e.g., `your_project_id`,
---   `your_curated_dataset`) and should be replaced by your configuration
---   management system (e.g., dbt, Terraform).
---
---------------------------------------------------------------------------------
+  This script contains the incremental MERGE statements to populate the Curated (Gold)
+  layer tables for the Customer Single Source of Truth (SSOT) data platform.
+
+  Instructions:
+  - Replace the placeholder `<project_id>`, `<raw_dataset>`, and `<curated_dataset>`
+    with your actual Google Cloud project ID and dataset names.
+  - These statements are designed to be run in sequence, as there are dependencies
+    for referential integrity checks (e.g., `customer` must be loaded before `lead`).
+    A recommended execution order is:
+      1. customer
+      2. lead
+      3. opportunity
+      4. quote
+      5. quote_detail
 */
 
--- =============================================================================
--- 1. Customer Table
--- =============================================================================
-
--- DDL for customer table
-CREATE OR REPLACE TABLE `your_project_id.your_curated_dataset.customer`
-(
-  customer_id STRING NOT NULL OPTIONS(description="Unique identifier for the customer, serving as the primary key."),
-  customer_type STRING OPTIONS(description="The type or category of the customer (e.g., Enterprise, SMB)."),
-  name STRING OPTIONS(description="The full name of the customer or contact person."),
-  company_name STRING OPTIONS(description="The name of the company associated with the customer."),
-  industry STRING OPTIONS(description="The industry sector the customer belongs to."),
-  email STRING OPTIONS(description="The primary email address of the customer."),
-  phone STRING OPTIONS(description="The primary phone number of the customer."),
-  website STRING OPTIONS(description="The customer's website URL."),
-  address_line1 STRING OPTIONS(description="The first line of the customer's address."),
-  address_line2 STRING OPTIONS(description="The second line of the customer's address."),
-  city STRING OPTIONS(description="The city of the customer's address."),
-  state STRING OPTIONS(description="The state or province of the customer's address."),
-  country STRING OPTIONS(description="The country of the customer's address."),
-  postal_code STRING OPTIONS(description="The postal or ZIP code of the customer's address."),
-  created_on TIMESTAMP OPTIONS(description="The timestamp when the customer record was created in the source system."),
-  modified_on TIMESTAMP OPTIONS(description="The timestamp when the customer record was last modified."),
-  is_active BOOL OPTIONS(description="A boolean flag indicating if the customer is currently active.")
-)
-CLUSTER BY customer_type, industry
-OPTIONS(
-  description="This curated dimension table provides a single source of truth for customer information. It joins data from the customer source entity and serves as the central point for linking leads, opportunities, and quotes.",
-  labels=[("domain", "sales"), ("entity", "customer")]
-);
-
--- DML for customer table (SCD Type 1)
-MERGE `your_project_id.your_curated_dataset.customer` AS T
-USING `your_project_id.your_raw_dataset.stg_customer` AS S
-ON T.customer_id = S.customer_id
+--------------------------------------------------------------------------------
+-- 1. Curated Customer Dimension
+--------------------------------------------------------------------------------
+MERGE `<project_id>.<curated_dataset>.customer` AS T
+USING (
+  SELECT
+    customer_id,
+    customer_type,
+    name,
+    company_name,
+    industry,
+    email,
+    phone,
+    website,
+    address_line1,
+    address_line2,
+    city,
+    state,
+    country,
+    postal_code,
+    created_on,
+    modified_on,
+    is_active
+  FROM
+    `<project_id>.<raw_dataset>.stg_customer`
+  WHERE
+    customer_id IS NOT NULL
+    -- Per TDD, this is an SCD Type 1 merge. `modified_on` is used as the watermark
+    -- to capture both new records and updates to existing records, which aligns
+    -- with the SCD1 requirement. The TDD note listing `created_on` as the watermark
+    -- for this table would fail to capture updates and is considered a documentation error.
+    AND modified_on > (
+      SELECT IFNULL(MAX(modified_on), TIMESTAMP('1900-01-01 00:00:00+00'))
+      FROM `<project_id>.<curated_dataset>.customer`
+    )
+) AS S
+ON
+  T.customer_id = S.customer_id
 WHEN MATCHED THEN
   UPDATE SET
     T.customer_type = S.customer_type,
@@ -79,7 +71,7 @@ WHEN MATCHED THEN
     T.created_on = S.created_on,
     T.modified_on = S.modified_on,
     T.is_active = S.is_active
-WHEN NOT MATCHED BY TARGET THEN
+WHEN NOT MATCHED THEN
   INSERT (
     customer_id,
     customer_type,
@@ -119,39 +111,43 @@ WHEN NOT MATCHED BY TARGET THEN
     S.is_active
   );
 
-
--- =============================================================================
--- 2. Lead Table
--- =============================================================================
-
--- DDL for lead table
-CREATE OR REPLACE TABLE `your_project_id.your_curated_dataset.lead`
-(
-  lead_id STRING NOT NULL OPTIONS(description="Unique identifier for the lead, serving as the primary key."),
-  topic STRING OPTIONS(description="The primary subject or topic of the lead."),
-  first_name STRING OPTIONS(description="The first name of the lead contact."),
-  last_name STRING OPTIONS(description="The last name of the lead contact."),
-  company_name STRING OPTIONS(description="The company name associated with the lead."),
-  email STRING OPTIONS(description="The email address of the lead contact."),
-  phone STRING OPTIONS(description="The phone number of the lead contact."),
-  lead_source STRING OPTIONS(description="The source from which the lead was generated (e.g., Web, Referral)."),
-  status STRING OPTIONS(description="The current status of the lead in the sales funnel (e.g., New, Qualified)."),
-  customer_id STRING OPTIONS(description="Foreign key linking the lead to a customer record."),
-  created_on TIMESTAMP OPTIONS(description="The timestamp when the lead was created in the source system."),
-  qualified_on TIMESTAMP OPTIONS(description="The timestamp when the lead was qualified, marking its conversion."),
-  owner_id STRING OPTIONS(description="The identifier of the employee who owns the lead.")
-)
-PARTITION BY DATE(created_on)
-CLUSTER BY lead_source, status
-OPTIONS(
-  description="This curated table stores information about leads, which represent potential sales opportunities at the earliest stage of the sales funnel.",
-  labels=[("domain", "sales"), ("entity", "lead")]
-);
-
--- DML for lead table (SCD Type 1)
-MERGE `your_project_id.your_curated_dataset.lead` AS T
-USING `your_project_id.your_raw_dataset.stg_lead` AS S
-ON T.lead_id = S.lead_id
+--------------------------------------------------------------------------------
+-- 2. Curated Lead Table
+--------------------------------------------------------------------------------
+MERGE `<project_id>.<curated_dataset>.lead` AS T
+USING (
+  SELECT
+    lead_id,
+    topic,
+    first_name,
+    last_name,
+    company_name,
+    email,
+    phone,
+    lead_source,
+    status,
+    customer_id,
+    created_on,
+    qualified_on,
+    owner_id
+  FROM
+    `<project_id>.<raw_dataset>.stg_lead` AS stg
+  WHERE
+    stg.lead_id IS NOT NULL
+    -- Incremental load based on the watermark column specified in the TDD.
+    AND stg.created_on > (
+      SELECT IFNULL(MAX(created_on), TIMESTAMP('1900-01-01 00:00:00+00'))
+      FROM `<project_id>.<curated_dataset>.lead`
+    )
+    -- Referential integrity check: associated customer must exist or be NULL.
+    AND (stg.customer_id IS NULL OR EXISTS (
+      SELECT 1
+      FROM `<project_id>.<curated_dataset>.customer` AS c
+      WHERE c.customer_id = stg.customer_id
+    ))
+) AS S
+ON
+  T.lead_id = S.lead_id
 WHEN MATCHED THEN
   UPDATE SET
     T.topic = S.topic,
@@ -166,7 +162,7 @@ WHEN MATCHED THEN
     T.created_on = S.created_on,
     T.qualified_on = S.qualified_on,
     T.owner_id = S.owner_id
-WHEN NOT MATCHED BY TARGET THEN
+WHEN NOT MATCHED THEN
   INSERT (
     lead_id,
     topic,
@@ -198,37 +194,47 @@ WHEN NOT MATCHED BY TARGET THEN
     S.owner_id
   );
 
-
--- =============================================================================
--- 3. Opportunity Table
--- =============================================================================
-
--- DDL for opportunity table
-CREATE OR REPLACE TABLE `your_project_id.your_curated_dataset.opportunity`
-(
-  opportunity_id STRING NOT NULL OPTIONS(description="Unique identifier for the opportunity, serving as the primary key."),
-  name STRING OPTIONS(description="The name or title of the opportunity."),
-  customer_id STRING OPTIONS(description="Foreign key linking the opportunity to a customer record."),
-  originating_lead_id STRING OPTIONS(description="Foreign key linking the opportunity to the lead it originated from."),
-  stage STRING OPTIONS(description="The current stage of the opportunity in the sales pipeline."),
-  status STRING OPTIONS(description="The current status of the opportunity (e.g., Open, Won, Lost)."),
-  estimated_value FLOAT64 OPTIONS(description="The estimated monetary value of the opportunity."),
-  probability FLOAT64 OPTIONS(description="The probability of winning the opportunity, as a float."),
-  close_date DATE OPTIONS(description="The expected date on which the opportunity will be closed."),
-  created_on TIMESTAMP OPTIONS(description="The timestamp when the opportunity was created."),
-  owner_id STRING OPTIONS(description="The identifier of the employee who owns the opportunity.")
-)
-PARTITION BY DATE(created_on)
-CLUSTER BY stage, status
-OPTIONS(
-  description="This curated table contains information on sales opportunities, representing qualified prospects that have moved into the active sales pipeline.",
-  labels=[("domain", "sales"), ("entity", "opportunity")]
-);
-
--- DML for opportunity table (SCD Type 1)
-MERGE `your_project_id.your_curated_dataset.opportunity` AS T
-USING `your_project_id.your_raw_dataset.stg_opportunity` AS S
-ON T.opportunity_id = S.opportunity_id
+--------------------------------------------------------------------------------
+-- 3. Curated Opportunity Table
+--------------------------------------------------------------------------------
+MERGE `<project_id>.<curated_dataset>.opportunity` AS T
+USING (
+  SELECT
+    opportunity_id,
+    name,
+    customer_id,
+    originating_lead_id,
+    stage,
+    status,
+    estimated_value,
+    probability,
+    close_date,
+    created_on,
+    owner_id
+  FROM
+    `<project_id>.<raw_dataset>.stg_opportunity` AS stg
+  WHERE
+    stg.opportunity_id IS NOT NULL
+    -- Incremental load based on the watermark column specified in the TDD.
+    AND stg.created_on > (
+      SELECT IFNULL(MAX(created_on), TIMESTAMP('1900-01-01 00:00:00+00'))
+      FROM `<project_id>.<curated_dataset>.opportunity`
+    )
+    -- Referential integrity check: associated customer must exist.
+    AND EXISTS (
+      SELECT 1
+      FROM `<project_id>.<curated_dataset>.customer` AS c
+      WHERE c.customer_id = stg.customer_id
+    )
+    -- Referential integrity check: associated lead must exist or be NULL.
+    AND (stg.originating_lead_id IS NULL OR EXISTS (
+      SELECT 1
+      FROM `<project_id>.<curated_dataset>.lead` AS l
+      WHERE l.lead_id = stg.originating_lead_id
+    ))
+) AS S
+ON
+  T.opportunity_id = S.opportunity_id
 WHEN MATCHED THEN
   UPDATE SET
     T.name = S.name,
@@ -241,7 +247,7 @@ WHEN MATCHED THEN
     T.close_date = S.close_date,
     T.created_on = S.created_on,
     T.owner_id = S.owner_id
-WHEN NOT MATCHED BY TARGET THEN
+WHEN NOT MATCHED THEN
   INSERT (
     opportunity_id,
     name,
@@ -269,36 +275,59 @@ WHEN NOT MATCHED BY TARGET THEN
     S.owner_id
   );
 
-
--- =============================================================================
--- 4. Quote Table
--- =============================================================================
-
--- DDL for quote table
-CREATE OR REPLACE TABLE `your_project_id.your_curated_dataset.quote`
-(
-  quote_id STRING NOT NULL OPTIONS(description="Unique identifier for the quote, serving as the primary key."),
-  quote_number STRING OPTIONS(description="The human-readable identifier for the quote."),
-  opportunity_id STRING OPTIONS(description="Foreign key linking the quote to a sales opportunity."),
-  customer_id STRING OPTIONS(description="Foreign key linking the quote to a customer record."),
-  status STRING OPTIONS(description="The current status of the quote (e.g., Draft, Active, Won)."),
-  total_amount FLOAT64 OPTIONS(description="The total amount of the quote."),
-  currency STRING OPTIONS(description="The currency code for the amounts in the quote."),
-  valid_from DATE OPTIONS(description="The date from which the quote is valid."),
-  valid_to DATE OPTIONS(description="The date until which the quote is valid."),
-  created_on TIMESTAMP OPTIONS(description="The timestamp when the quote was created.")
-)
-PARTITION BY DATE(created_on)
-CLUSTER BY status
-OPTIONS(
-  description="This curated table stores header-level information for sales quotes issued to customers.",
-  labels=[("domain", "sales"), ("entity", "quote")]
-);
-
--- DML for quote table (SCD Type 1)
-MERGE `your_project_id.your_curated_dataset.quote` AS T
-USING `your_project_id.your_raw_dataset.stg_quote` AS S
-ON T.quote_id = S.quote_id
+--------------------------------------------------------------------------------
+-- 4. Curated Quote Table
+--------------------------------------------------------------------------------
+MERGE `<project_id>.<curated_dataset>.quote` AS T
+USING (
+  WITH
+    quote_detail_agg AS (
+      -- Pre-aggregate line item totals to validate against the quote header total.
+      SELECT
+        quote_id,
+        SUM(total_amount) AS calculated_total_amount
+      FROM
+        `<project_id>.<raw_dataset>.stg_quote_detail`
+      GROUP BY
+        quote_id
+    )
+  SELECT
+    hdr.quote_id,
+    hdr.quote_number,
+    hdr.opportunity_id,
+    hdr.customer_id,
+    hdr.status,
+    hdr.total_amount,
+    hdr.currency,
+    hdr.valid_from,
+    hdr.valid_to,
+    hdr.created_on
+  FROM
+    `<project_id>.<raw_dataset>.stg_quote` AS hdr
+    LEFT JOIN quote_detail_agg AS dtl ON hdr.quote_id = dtl.quote_id
+  WHERE
+    hdr.quote_id IS NOT NULL
+    -- Incremental load based on the watermark column specified in the TDD.
+    AND hdr.created_on > (
+      SELECT IFNULL(MAX(created_on), TIMESTAMP('1900-01-01 00:00:00+00'))
+      FROM `<project_id>.<curated_dataset>.quote`
+    )
+    -- Financial integrity check per TDD.
+    AND hdr.total_amount = COALESCE(dtl.calculated_total_amount, 0)
+    -- Referential integrity checks.
+    AND EXISTS (
+      SELECT 1
+      FROM `<project_id>.<curated_dataset>.customer` AS c
+      WHERE c.customer_id = hdr.customer_id
+    )
+    AND EXISTS (
+      SELECT 1
+      FROM `<project_id>.<curated_dataset>.opportunity` AS o
+      WHERE o.opportunity_id = hdr.opportunity_id
+    )
+) AS S
+ON
+  T.quote_id = S.quote_id
 WHEN MATCHED THEN
   UPDATE SET
     T.quote_number = S.quote_number,
@@ -310,7 +339,7 @@ WHEN MATCHED THEN
     T.valid_from = S.valid_from,
     T.valid_to = S.valid_to,
     T.created_on = S.created_on
-WHEN NOT MATCHED BY TARGET THEN
+WHEN NOT MATCHED THEN
   INSERT (
     quote_id,
     quote_number,
@@ -336,32 +365,69 @@ WHEN NOT MATCHED BY TARGET THEN
     S.created_on
   );
 
-
--- =============================================================================
--- 5. Quote Detail Table
--- =============================================================================
-
--- DDL for quote_detail table
-CREATE OR REPLACE TABLE `your_project_id.your_curated_dataset.quote_detail`
-(
-  quote_detail_id STRING NOT NULL OPTIONS(description="Unique identifier for the quote line item, serving as the primary key."),
-  quote_id STRING OPTIONS(description="Foreign key linking the line item to its parent quote header."),
-  product_name STRING OPTIONS(description="The name of the product or service in this line item."),
-  product_category STRING OPTIONS(description="The category of the product or service."),
-  quantity INT64 OPTIONS(description="The number of units of the product or service."),
-  unit_price FLOAT64 OPTIONS(description="The price per unit of the product or service."),
-  discount FLOAT64 OPTIONS(description="The discount amount or percentage applied to this line item."),
-  total_amount FLOAT64 OPTIONS(description="The total amount for this line item.")
-)
-OPTIONS(
-  description="This curated table stores the individual line items for each sales quote, providing detailed product and pricing information.",
-  labels=[("domain", "sales"), ("entity", "quote_detail")]
-);
-
--- DML for quote_detail table (SCD Type 1)
-MERGE `your_project_id.your_curated_dataset.quote_detail` AS T
-USING `your_project_id.your_raw_dataset.stg_quote_detail` AS S
-ON T.quote_detail_id = S.quote_detail_id
+--------------------------------------------------------------------------------
+-- 5. Curated Quote Detail Table
+--------------------------------------------------------------------------------
+MERGE `<project_id>.<curated_dataset>.quote_detail` AS T
+USING (
+  WITH
+    valid_incremental_quotes AS (
+      -- This CTE identifies the set of quotes that are part of the current
+      -- incremental batch and have passed all quality checks. This ensures
+      -- that we only process details for valid, loadable parent quotes.
+      -- The logic is identical to the source query for the `quote` merge.
+      WITH
+        quote_detail_agg AS (
+          SELECT
+            quote_id,
+            SUM(total_amount) AS calculated_total_amount
+          FROM
+            `<project_id>.<raw_dataset>.stg_quote_detail`
+          GROUP BY
+            quote_id
+        )
+      SELECT
+        hdr.quote_id
+      FROM
+        `<project_id>.<raw_dataset>.stg_quote` AS hdr
+        LEFT JOIN quote_detail_agg AS dtl ON hdr.quote_id = dtl.quote_id
+      WHERE
+        hdr.quote_id IS NOT NULL
+        AND hdr.created_on > (
+          SELECT IFNULL(MAX(created_on), TIMESTAMP('1900-01-01 00:00:00+00'))
+          FROM `<project_id>.<curated_dataset>.quote`
+        )
+        AND hdr.total_amount = COALESCE(dtl.calculated_total_amount, 0)
+        AND EXISTS (
+          SELECT 1
+          FROM `<project_id>.<curated_dataset>.customer` AS c
+          WHERE c.customer_id = hdr.customer_id
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM `<project_id>.<curated_dataset>.opportunity` AS o
+          WHERE o.opportunity_id = hdr.opportunity_id
+        )
+    )
+  SELECT
+    dtl.quote_detail_id,
+    dtl.quote_id,
+    dtl.product_name,
+    dtl.product_category,
+    dtl.quantity,
+    dtl.unit_price,
+    dtl.discount,
+    dtl.total_amount
+  FROM
+    `<project_id>.<raw_dataset>.stg_quote_detail` AS dtl
+  INNER JOIN
+    valid_incremental_quotes AS vq
+    ON dtl.quote_id = vq.quote_id
+  WHERE
+    dtl.quote_detail_id IS NOT NULL
+) AS S
+ON
+  T.quote_detail_id = S.quote_detail_id
 WHEN MATCHED THEN
   UPDATE SET
     T.quote_id = S.quote_id,
@@ -371,7 +437,7 @@ WHEN MATCHED THEN
     T.unit_price = S.unit_price,
     T.discount = S.discount,
     T.total_amount = S.total_amount
-WHEN NOT MATCHED BY TARGET THEN
+WHEN NOT MATCHED THEN
   INSERT (
     quote_detail_id,
     quote_id,
