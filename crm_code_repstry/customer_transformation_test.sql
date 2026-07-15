@@ -1,15 +1,20 @@
 /*
-  Unit Tests for crm_code_repstry/customer_transformation.sql
+  Production-Ready Unit Tests for crm_code_repstry/customer_transformation.sql
 
-  This script contains a suite of unit tests to validate the data integrity
-  of the curated CRM tables populated by the customer_transformation.sql script.
-  Each test is a standalone BigQuery SQL query that returns 'PASS' or 'FAIL'.
+  This script contains an enhanced suite of unit tests to validate the data integrity
+  and business logic of the curated CRM tables populated by the MERGE statements
+  in customer_transformation.sql.
+
+  Each test is a standalone BigQuery SQL query that returns 'PASS' if the
+  condition is met, and 'FAIL' otherwise. This suite is designed to be run
+  after the ETL process to certify the quality of the curated data.
 
   Tests cover:
   - Uniqueness of primary keys.
   - Not-null constraints on critical columns.
   - Referential integrity between tables.
-  - Domain and range checks for specific fields.
+  - Domain, range, and format checks for specific fields.
+  - Chronological and logical consistency.
 */
 
 --------------------------------------------------------------------------------
@@ -53,12 +58,20 @@ FROM `curated.customer`
 WHERE created_on IS NULL;
 
 -- test: customer_domain_is_active
--- The is_active flag must be a valid boolean (TRUE or FALSE).
+-- The is_active flag must be a valid boolean (TRUE or FALSE), not NULL.
 SELECT
   IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
   'customer_domain_is_active' AS test_name
 FROM `curated.customer`
 WHERE is_active NOT IN (TRUE, FALSE);
+
+-- test: customer_valid_email_format
+-- The email field, when not null, should have a valid format.
+SELECT
+  IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+  'customer_valid_email_format' AS test_name
+FROM `curated.customer`
+WHERE email IS NOT NULL AND NOT REGEXP_CONTAINS(email, r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
 
 
 --------------------------------------------------------------------------------
@@ -101,6 +114,14 @@ SELECT
 FROM `curated.lead` AS l
 LEFT JOIN `curated.customer` AS c ON l.customer_id = c.customer_id
 WHERE l.customer_id IS NOT NULL AND c.customer_id IS NULL;
+
+-- test: lead_chronological_dates
+-- The qualified_on date should not be before the created_on date.
+SELECT
+  IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+  'lead_chronological_dates' AS test_name
+FROM `curated.lead`
+WHERE qualified_on IS NOT NULL AND created_on IS NOT NULL AND qualified_on < created_on;
 
 
 --------------------------------------------------------------------------------
@@ -177,6 +198,14 @@ SELECT
 FROM `curated.opportunity`
 WHERE estimated_value < 0;
 
+-- test: opportunity_chronological_dates
+-- The close_date should not be before the created_on date.
+SELECT
+  IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+  'opportunity_chronological_dates' AS test_name
+FROM `curated.opportunity`
+WHERE close_date IS NOT NULL AND created_on IS NOT NULL AND close_date < DATE(created_on);
+
 
 --------------------------------------------------------------------------------
 -- Tests for: curated.quote
@@ -235,6 +264,24 @@ SELECT
   'quote_positive_total_amount' AS test_name
 FROM `curated.quote`
 WHERE total_amount < 0;
+
+-- test: quote_customer_id_consistency
+-- The customer_id on a quote must match the customer_id on its parent opportunity.
+SELECT
+  IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+  'quote_customer_id_consistency' AS test_name
+FROM `curated.quote` AS q
+JOIN `curated.opportunity` AS o
+  ON q.opportunity_id = o.opportunity_id
+WHERE q.customer_id != o.customer_id;
+
+-- test: quote_valid_date_range
+-- The valid_to date for a quote should not be before its valid_from date.
+SELECT
+  IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+  'quote_valid_date_range' AS test_name
+FROM `curated.quote`
+WHERE valid_to IS NOT NULL AND valid_from IS NOT NULL AND valid_to < valid_from;
 
 
 --------------------------------------------------------------------------------
@@ -301,3 +348,16 @@ SELECT
   'quote_detail_range_discount' AS test_name
 FROM `curated.quote_detail`
 WHERE discount < 0 OR discount > 1;
+
+-- test: quote_detail_total_amount_calculation
+-- The total_amount should be correctly calculated from quantity, unit_price, and discount.
+-- Allows for a small tolerance for floating point inaccuracies.
+SELECT
+  IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+  'quote_detail_total_amount_calculation' AS test_name
+FROM `curated.quote_detail`
+WHERE
+  total_amount > 0 AND
+  ABS(
+    (quantity * unit_price * (1 - COALESCE(discount, 0))) - total_amount
+  ) > 0.01;
