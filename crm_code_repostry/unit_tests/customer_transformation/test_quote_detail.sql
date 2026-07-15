@@ -8,7 +8,8 @@
 -- The primary key `quote_detail_id` must not be null.
 SELECT
   IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
-  'not_null_quote_detail_id' AS test_name
+  'not_null_quote_detail_id' AS test_name,
+  'The primary key `quote_detail_id` must not be null.' AS description
 FROM
   `Curated.quote_detail`
 WHERE
@@ -18,7 +19,8 @@ WHERE
 -- The primary key `quote_detail_id` must be unique.
 SELECT
   IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
-  'unique_quote_detail_id' AS test_name
+  'unique_quote_detail_id' AS test_name,
+  'The primary key `quote_detail_id` must be unique.' AS description
 FROM (
   SELECT
     quote_detail_id
@@ -36,7 +38,8 @@ FROM (
 -- The foreign key `quote_id` must not be null, as a detail line must belong to a quote.
 SELECT
   IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
-  'not_null_quote_id' AS test_name
+  'not_null_quote_id' AS test_name,
+  'The foreign key `quote_id` must not be null.' AS description
 FROM
   `Curated.quote_detail`
 WHERE
@@ -46,7 +49,8 @@ WHERE
 -- The `quote_id` must exist in the `Curated.quote` table.
 SELECT
   IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
-  'referential_integrity_quote_id' AS test_name
+  'referential_integrity_quote_id' AS test_name,
+  'The `quote_id` must exist in the `Curated.quote` table.' AS description
 FROM (
   SELECT
     QD.quote_id
@@ -62,7 +66,8 @@ FROM (
 -- The `quantity` of a line item should be a positive number.
 SELECT
   IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
-  'range_quantity' AS test_name
+  'range_quantity' AS test_name,
+  'The `quantity` of a line item should be a positive number.' AS description
 FROM
   `Curated.quote_detail`
 WHERE
@@ -73,7 +78,8 @@ WHERE
 -- The `unit_price` should be non-negative.
 SELECT
   IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
-  'range_unit_price' AS test_name
+  'range_unit_price' AS test_name,
+  'The `unit_price` should be non-negative.' AS description
 FROM
   `Curated.quote_detail`
 WHERE
@@ -86,7 +92,8 @@ WHERE
 -- A small tolerance (0.01) is used for floating point comparison.
 SELECT
   IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
-  'consistency_total_amount_calculation' AS test_name
+  'consistency_total_amount_calculation' AS test_name,
+  '`total_amount` should be consistent with (qty * price) - discount.' AS description
 FROM
   `Curated.quote_detail`
 WHERE
