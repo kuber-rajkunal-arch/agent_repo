@@ -1,6 +1,6 @@
 /*
   This script contains the transformation logic to populate the curated (Gold)
-  CRM data models from the staging (Bronze) tables. It uses an incremental
+  CRM data models from the staging (Silver) tables. It uses an incremental
   SCD Type 1 MERGE pattern for each entity, ensuring that the curated layer
   reflects the latest state from the source system.
 
@@ -12,7 +12,7 @@
 -- This statement performs an incremental load using a MERGE operation.
 -- New records from staging are inserted, and existing records are updated (SCD Type 1).
 MERGE `curated.customer` AS T
-USING `raw.stg_customer` AS S
+USING `crm_raw_data_silver.stg_customer` AS S
 ON T.customer_id = S.customer_id
 WHEN MATCHED THEN
   UPDATE SET
@@ -28,7 +28,7 @@ WHEN MATCHED THEN
     T.city = S.city,
     T.state = S.state,
     T.country = S.country,
-    T.postal_code = S.postal_code,
+    T.postal_code = CAST(S.postal_code AS STRING),
     T.created_on = S.created_on,
     T.modified_on = S.modified_on,
     T.is_active = S.is_active
@@ -66,7 +66,7 @@ WHEN NOT MATCHED BY TARGET THEN
     S.city,
     S.state,
     S.country,
-    S.postal_code,
+    CAST(S.postal_code AS STRING),
     S.created_on,
     S.modified_on,
     S.is_active
@@ -76,7 +76,7 @@ WHEN NOT MATCHED BY TARGET THEN
 -- This statement performs an incremental load using a MERGE operation.
 -- New records from staging are inserted, and existing records are updated (SCD Type 1).
 MERGE `curated.lead` AS T
-USING `raw.stg_lead` AS S
+USING `crm_raw_data_silver.stg_leads_2` AS S
 ON T.lead_id = S.lead_id
 WHEN MATCHED THEN
   UPDATE SET
@@ -128,7 +128,7 @@ WHEN NOT MATCHED BY TARGET THEN
 -- This statement performs an incremental load using a MERGE operation.
 -- New records from staging are inserted, and existing records are updated (SCD Type 1).
 MERGE `curated.opportunity` AS T
-USING `raw.stg_opportunity` AS S
+USING `crm_raw_data_silver.stg_opportunity` AS S
 ON T.opportunity_id = S.opportunity_id
 WHEN MATCHED THEN
   UPDATE SET
@@ -174,7 +174,7 @@ WHEN NOT MATCHED BY TARGET THEN
 -- This statement performs an incremental load using a MERGE operation.
 -- New records from staging are inserted, and existing records are updated (SCD Type 1).
 MERGE `curated.quote` AS T
-USING `raw.stg_quote` AS S
+USING `crm_raw_data_silver.stg_quote` AS S
 ON T.quote_id = S.quote_id
 WHEN MATCHED THEN
   UPDATE SET
@@ -217,7 +217,7 @@ WHEN NOT MATCHED BY TARGET THEN
 -- This statement performs an incremental load using a MERGE operation.
 -- New records from staging are inserted, and existing records are updated (SCD Type 1).
 MERGE `curated.quote_detail` AS T
-USING `raw.stg_quote_detail` AS S
+USING `crm_raw_data_silver.stg_quote_detail` AS S
 ON T.quote_detail_id = S.quote_detail_id
 WHEN MATCHED THEN
   UPDATE SET
