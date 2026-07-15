@@ -1,16 +1,16 @@
 /*
   Unit tests for the 'curated.quote' table.
   These tests validate the data integrity of the final quote table
-  after the transformation script has been executed.
+  after the transformation script has been executed. The tests cover key integrity,
+  referential integrity, business logic, and domain constraints.
 */
 
 -- test: not_null_quote_id
 -- The primary key 'quote_id' should never be null.
 SELECT
-  IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+  IF(COUNTIF(quote_id IS NULL) = 0, 'PASS', 'FAIL') AS result,
   'not_null_quote_id' AS test_name
-FROM `curated.quote`
-WHERE quote_id IS NULL;
+FROM `curated.quote`;
 
 -- test: unique_quote_id
 -- The primary key 'quote_id' must be unique across all records.
@@ -22,10 +22,9 @@ FROM `curated.quote`;
 -- test: not_null_quote_number
 -- The business key 'quote_number' should not be null.
 SELECT
-  IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+  IF(COUNTIF(quote_number IS NULL) = 0, 'PASS', 'FAIL') AS result,
   'not_null_quote_number' AS test_name
-FROM `curated.quote`
-WHERE quote_number IS NULL;
+FROM `curated.quote`;
 
 -- test: unique_quote_number
 -- The business key 'quote_number' should be unique.
@@ -37,18 +36,16 @@ FROM `curated.quote`;
 -- test: not_null_opportunity_id
 -- Every quote must be associated with an opportunity.
 SELECT
-  IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+  IF(COUNTIF(opportunity_id IS NULL) = 0, 'PASS', 'FAIL') AS result,
   'not_null_opportunity_id' AS test_name
-FROM `curated.quote`
-WHERE opportunity_id IS NULL;
+FROM `curated.quote`;
 
 -- test: not_null_customer_id
 -- Every quote must be associated with a customer.
 SELECT
-  IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+  IF(COUNTIF(customer_id IS NULL) = 0, 'PASS', 'FAIL') AS result,
   'not_null_customer_id' AS test_name
-FROM `curated.quote`
-WHERE customer_id IS NULL;
+FROM `curated.quote`;
 
 -- test: referential_opportunity_id
 -- The 'opportunity_id' in the quote table must exist in the opportunity table.
@@ -77,23 +74,23 @@ WHERE
 -- test: range_total_amount
 -- The 'total_amount' should be non-negative.
 SELECT
-  IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+  IF(COUNTIF(total_amount < 0) = 0, 'PASS', 'FAIL') AS result,
   'range_total_amount' AS test_name
 FROM `curated.quote`
-WHERE total_amount < 0;
+WHERE total_amount IS NOT NULL;
 
 -- test: logic_valid_dates
 -- The 'valid_to' date should not be before the 'valid_from' date.
 SELECT
-  IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+  IF(COUNTIF(valid_to < valid_from) = 0, 'PASS', 'FAIL') AS result,
   'logic_valid_dates' AS test_name
 FROM `curated.quote`
-WHERE valid_from IS NOT NULL AND valid_to IS NOT NULL AND valid_to < valid_from;
+WHERE valid_from IS NOT NULL AND valid_to IS NOT NULL;
 
 -- test: domain_status
 -- The 'status' field should conform to a predefined set of values.
 SELECT
-  IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
+  IF(COUNTIF(status NOT IN ('Draft', 'Presented', 'Accepted', 'Expired', 'Declined')) = 0, 'PASS', 'FAIL') AS result,
   'domain_status' AS test_name
 FROM `curated.quote`
-WHERE status NOT IN ('Draft', 'Presented', 'Accepted', 'Expired', 'Declined');
+WHERE status IS NOT NULL;
