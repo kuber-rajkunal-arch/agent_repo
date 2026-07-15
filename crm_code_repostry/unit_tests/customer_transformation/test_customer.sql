@@ -8,7 +8,8 @@
 -- The primary key `customer_id` must not be null.
 SELECT
   IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
-  'not_null_customer_id' AS test_name
+  'not_null_customer_id' AS test_name,
+  'The primary key `customer_id` must not be null.' AS description
 FROM
   `Curated.customer`
 WHERE
@@ -18,7 +19,8 @@ WHERE
 -- The primary key `customer_id` must be unique.
 SELECT
   IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
-  'unique_customer_id' AS test_name
+  'unique_customer_id' AS test_name,
+  'The primary key `customer_id` must be unique.' AS description
 FROM (
   SELECT
     customer_id
@@ -36,7 +38,8 @@ FROM (
 -- The `created_on` timestamp is a critical field and should always be populated.
 SELECT
   IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
-  'not_null_created_on' AS test_name
+  'not_null_created_on' AS test_name,
+  'The `created_on` timestamp should always be populated.' AS description
 FROM
   `Curated.customer`
 WHERE
@@ -46,7 +49,8 @@ WHERE
 -- The `modified_on` timestamp is a critical field and should always be populated.
 SELECT
   IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
-  'not_null_modified_on' AS test_name
+  'not_null_modified_on' AS test_name,
+  'The `modified_on` timestamp should always be populated.' AS description
 FROM
   `Curated.customer`
 WHERE
@@ -56,19 +60,21 @@ WHERE
 -- The `modified_on` timestamp should not be earlier than the `created_on` timestamp.
 SELECT
   IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
-  'consistency_modified_on_vs_created_on' AS test_name
+  'consistency_modified_on_vs_created_on' AS test_name,
+  'The `modified_on` timestamp should not be earlier than `created_on`.' AS description
 FROM
   `Curated.customer`
 WHERE
   modified_on < created_on;
 
 -- test: valid_email_format
--- Checks for a basic email format ('@' symbol) for non-null email addresses.
+-- Checks for a basic email format ('@' and '.') for non-null email addresses.
 SELECT
   IF(COUNT(*) = 0, 'PASS', 'FAIL') AS result,
-  'valid_email_format' AS test_name
+  'valid_email_format' AS test_name,
+  'Non-null emails should contain a valid format (e.g., user@domain.com).' AS description
 FROM
   `Curated.customer`
 WHERE
   email IS NOT NULL
-  AND NOT REGEXP_CONTAINS(email, r'@');
+  AND NOT REGEXP_CONTAINS(email, r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
